@@ -1,0 +1,72 @@
+import numpy as np
+import params
+import h5py
+from scipy.interpolate import RegularGridInterpolator
+
+class EOS:
+    '''Equation of State for a given component of the planet.'''
+
+    def __init__(self,species,datafile,isothermal=True):
+        '''
+        Creates EOS object with all pressure/adiabatic gradient information.
+
+        -species: name of species ('fe','mgpv','h2o','hhe')
+        -datafile: location of EOS data
+        -isothermal: whether to create isothermal or T-dependent EOS
+        '''
+
+        self.isothermal = isothermal
+
+        if self.isothermal:
+            self.f = np.loadtxt(datafile,skiprows=1)
+            self.pressure_data = np.copy(f[:,0])
+            self.rho_data = np.copy(f[:,1])
+        else:
+            self.f = h5py.File(datafile,"r")
+            self.pressure_data = np.copy(self.f['logP'])
+            self.T_data = np.copy(self.f['logT'])
+            self.rho_grid = np.copy(self.f['logrho'])
+            self.grad_grid = np.copy(self.f['dlogT_dlogP'])
+            
+            self.grad_interp = RegularGridInterpolator((self.pressure_data,self.T_data),self.grad_grid,method='nearest')
+            self.rho_interp = RegularGridInterpolator((self.pressure_data,self.T_data),self.rho_grid,method='nearest')
+
+    def __get_gradient(self,logP,logT):
+        '''Find nearest adiabatic gradient'''
+        return grad_interp(np.c_[logP,logT])
+
+    def __get_density(self,logP,logT):
+        '''Find nearest density'''
+        return rho_interp(np.c_[logP,logT])
+
+    def get_eos(self,logPgrid,logPsurf=None,logTsurf=None):
+        '''Compute EOS given a pressure grid and surface P and T'''
+
+        if self.isothermal:
+            logrho = np.interp(logPgrid,pressure_data,rho_data)
+        else:
+            logrho = np.zeros_like(logPgrid)
+            logT = logTsurf
+
+            T_out = np.zeros_like(logrho) 
+
+            step = logPgrid[1]-logPgrid[0]#requires even log-spaced grid
+
+            for i in range(len(logPgrid)):
+                logT_for_rho = np.copy(logT)
+
+                T_out[i] = logT_for_rho
+
+                #dealing with out of bounds temperatures
+                if logT_for_rho > np.amax(T_data):
+                    logT_for_rho = np.amax(T_data)
+                if logT_for_rho < np.amin(T_data):
+                    logT_for_rho = np.amin(T_data)
+
+                logrho[i] = get_density(logPgrid[i],logT_for_rho)
+
+                if logPgrid[i] >= logPsurf:
+                    gradient = get_gradient(logPgrid[i],logT_for_rho)
+                    logT += step*gradient
+
+        return logrho
