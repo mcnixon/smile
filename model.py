@@ -3,7 +3,7 @@
 import params
 import eos
 import numpy as np
-from rkf45 import *
+#from rkf45 import *
 
 from scipy.integrate import solve_ivp
 
@@ -37,7 +37,7 @@ class Model:
             self.eos_data[component] = eos.EOS(component)
             self.rho_dict[component] = self.eos_data[component].get_eos(self.pressure_grid,np.log10(params.Pad),np.log10(params.T_0))
 
-    def find_Rp(self):
+    def find_Rp(self,steps=2.0e4):
 
         solved = False
         Rp_range = np.copy(params.Rp_range)
@@ -50,9 +50,10 @@ class Model:
 
             #soln = r8_rkf45(self.ode_sys, 2, np.array([self.P0,Rp_choice*params.REarth]), Yp0, self.mass*params.MEarth, 0, 1.0e-2, 1.0e5, 1)
 
-            soln = solve_ivp(self.ode_sys, (self.mass*params.MEarth,0), np.array([self.P0,Rp_choice*params.REarth]),max_step=1.0e20)
+            #soln = solve_ivp(self.ode_sys, (self.mass*params.MEarth,0), np.array([self.P0,Rp_choice*params.REarth]),max_step=1.0e20)
 
             #soln = euler(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,2.0e4)
+            soln = rk4_a(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0)#,steps)
 
             #print(soln.t)
             #print(soln.y)
@@ -74,16 +75,16 @@ class Model:
             #final_m = soln[2]
 
             #final_p = soln.y[0,-1]
-            final_r = soln.y[1,-1]
-            final_m = soln.t[-1]
+            #final_r = soln.y[1,-1]
+            #final_m = soln.t[-1]
 
             #if final_m > 0:
             #    soln = euler(self.ode_sys, np.array([final_p,final_r]), final_m,0.0,5.0e2)
             #    final_r = soln[1][1]
             #    final_m = soln[0]
 
-            #final_r = soln[1][1]
-            #final_m = soln[0]
+            final_r = soln[1][1]
+            final_m = soln[0]
 
             print(final_r,final_m)
 
@@ -95,7 +96,7 @@ class Model:
             else:
                 print('done')
                 print('Rp = '+str(Rp_choice))
-                quit()
+                #quit()
                 Rp_final = Rp_choice
                 solved = True
         return Rp_final
@@ -115,11 +116,11 @@ class Model:
         else:
             component_idx = 0
         comp = params.components[component_idx]
-        rho = np.interp(np.log10(p),self.pressure_grid,self.rho_dict[comp])
-        rho = 10**rho
+        lrho = np.interp(np.log10(p),self.pressure_grid,self.rho_dict[comp])
+        rho = 10**lrho
         dr_dm = 1.0/(4.0*np.pi*r**2*rho)
 
-        return(np.array([dp_dm,dr_dm]))
+        return((np.array([dp_dm,dr_dm]),lrho))
 
 def euler(f, y0, t0, t_end, nsteps):
     t = np.linspace(t0,t_end,nsteps)
@@ -130,4 +131,175 @@ def euler(f, y0, t0, t_end, nsteps):
         y[i+1] = y[i] + h*f(t[i],y[i])
 
     return(t[-1],y[-1])
+
+def rk4(f, y0, t0, t_end, nsteps):
+    t = np.linspace(t0,t_end,nsteps)
+    h = (t_end-t0)/nsteps
+    y = np.zeros((len(t),len(y0)))
+    y[0] = y0
+    for i in range(len(t)-1):
+        k1 = h*f(t[i],y[i])
+        k2 = h*f(t[i]+0.5*h,y[i]+0.5*k1)
+        k3 = h*f(t[i]+0.5*h,y[i]+0.5*k2)
+        k4 = h*f(t[i]+h,y[i]+k3)
+
+        y[i+1] = y[i] + (k1+2*k2+2*k3+k4)*(1.0/6.0)
+
+    return(t[-1],y[-1])
+
+def rk4_a(f, y0, t0, t_end):
+    y = np.copy(y0)
+    t = np.copy(t0)
+    h = -t0*1.0e-3
+    h_min = -t0*1.0e-5
+    h_max = -t0*1.0e-2
+
+    while np.logical_and(t > 0,y[1] > 0):
+
+        if np.abs(h) > t:
+            h = -t
+        
+        k1 = h*f(t,y)[0]
+        k2 = h*f(t+0.5*h,y+0.5*k1)[0]
+        k3 = h*f(t+0.5*h,y+0.5*k2)[0]
+        k4 = h*f(t+h,y+k3)[0]
+
+        lrho = f(t,y)[1]
+
+        delta_y = (k1+2*k2+2*k3+k4)*(1.0/6.0)
+
+        y_new = y + delta_y
+        t_new = t + h
+
+        lrho_new = f(t_new,y_new)[1]
+
+        delta_rho = np.abs(lrho_new-lrho)
+
+        delta_rho_max = 1.0e-1
+        delta_rho_min = 1.0e-3
+
+        last = False
+        
+        if t_new == 0 and y_new[1] < 0:
+            last = True
+            step = 'step too big'
+            h *= 0.5
+        elif t_new == 0:
+            step = 'step taken'
+            #print(h/t0,delta_rho,step)
+            y = y_new
+            t = t_new            
+        elif h == h_min:
+            step = 'step taken'
+            #print(h/t0,delta_rho,step)
+            y = y_new
+            t = t_new
+        elif h == h_max:
+            step = 'step taken'
+            #print(h/t0,delta_rho,step)
+            y = y_new
+            t = t_new            
+        elif delta_rho > delta_rho_max:
+            step = 'step too big'
+            #print(h/t0,delta_rho,step)
+            h *= 0.8
+            if np.abs(h) < np.abs(h_min):
+                h = h_min
+        elif delta_rho < delta_rho_min:
+            if last:
+                y = y_new
+                t = t_new
+            step = 'step too small'
+            #print(h/t0,delta_rho,step)
+            h /= 0.8
+            if np.abs(h) > np.abs(h_max):
+                h = h_max
+        else:
+            step = 'step taken'
+            #print(h/t0,delta_rho,step)
+            y = y_new
+            t = t_new
+
+    return(t,y)
+
+def rkf(f, y0, t0, t_end):
+    y = np.copy(y0)
+    t = np.copy(t0)
+    h = -t0*1.0e-3
+    #print(t,y)
+
+    a = np.array([0.0,1.0/5.0,3.0/10.0,3.0/5.0,1.0,7.0/8.0])
+    b = np.array([[0.0,0.0,0.0,0.0,0.0],
+                  [1.0/5.0,0.0,0.0,0.0,0.0],
+                  [3.0/40.0,9.0/40.0,0.0,0.0,0.0],
+                  [3.0/10.0,-9.0/10.0,6.0/5.0,0.0,0.0],
+                  [-11.0/54.0,5.0/2.0,-70.0/27.0,35.0/27.0,0.0],
+                  [1631.0/55296.0,175.0/512.0,575.0/13824.0,44275.0/110592.0,253.0/4096.0]])
+    c = np.array([37.0/378.0,0.0,250.0/621.0,125.0/594.0,0.0,512.0/1771.0])
+    c_s = np.array([2825.0/27648.0,0.0,18575.0/48384.0,13525.0/55296.0,277.0/14336.0,1.0/4.0])
+
+    c = np.repeat(np.expand_dims(c,-1),2,axis=-1)
+    c_s = np.repeat(np.expand_dims(c_s,-1),2,axis=-1)
     
+    eps = 0.001
+
+    count = 0
+
+    #print(count,t0,h,y0[0],y0[1])
+    
+    while np.logical_and(t > 0,y[1] > 0):
+
+        if np.abs(h) > t:
+            h = -t
+
+        k = np.zeros_like(c)
+        k[0] = h*f(t,y)
+        k[1] = h*f(t+a[1]*h,y+b[1,0]*k[0])
+        k[2] = h*f(t+a[2]*h,y+b[2,0]*k[0]+b[2,1]*k[1])
+        k[3] = h*f(t+a[3]*h,y+b[3,0]*k[0]+b[3,1]*k[1]+b[3,2]*k[2])
+        k[4] = h*f(t+a[4]*h,y+b[4,0]*k[0]+b[4,1]*k[1]+b[4,2]*k[2]+b[4,3]*k[3])
+        k[5] = h*f(t+a[5]*h,y+b[5,0]*k[0]+b[5,1]*k[1]+b[5,2]*k[2]+b[5,3]*k[3]+b[5,4]*k[4])
+
+        dy = np.sum(c*k,axis=0)
+        y_new = y + np.sum(c*k,axis=0)
+        y_s = y + np.sum(c_s*k,axis=0)
+        #print(t,y_new[1],y_s[1])
+
+        delta = y_new-y_s
+        delta = delta[1]
+
+        #acc = y0[1]*(h/t0)
+        #acc = 6371.0*(h/t0)
+        #acc = eps*k[0][1]
+        acc = 0.001*params.REarth*h/(t0)
+        #print(acc,delta)
+        
+        #t += h
+        #y = y_new
+
+        #print('delta = ',delta,'acc = ',acc)
+        
+        if np.abs(delta) > np.abs(acc):
+            step = 'not taken'
+            print(h,step)
+            h *= 0.95*np.abs((acc/delta))**0.25
+        elif delta == 0:
+            step = 'taken'
+            print(h,step)
+            y = y_new
+            t += h
+        else:
+            step = 'taken'
+            print(h,step)
+            y = y_new
+            t += h
+            print(h,np.abs((acc/delta))**0.2,h*np.abs((acc/delta))**0.2)
+            h *= 0.95*np.abs((acc/delta))**0.2
+        #print(t,y[1])
+        #t += h
+        #y = y_new
+
+        count += 1
+        #print(count,t,h,y[0],y[1])
+    
+    return (t,y)
