@@ -3,19 +3,19 @@
 import numpy as np
 
 #MR curve settings (MEarth)
-mass_upper = 10
+mass_upper = 10.5
 mass_lower = 0.5
 mass_step = 0.5
 
 #mass fractions: Fe, MgPv, H2O, remainder in H/He
-mass_fractions = np.array([0.233,0.467,0.3])
-#mass_fractions = np.array([0.0,0.0,0.0])
+#mass_fractions = np.array([0.233,0.467,0.3])
+mass_fractions = np.array([1.0,0.0,0.0,0.0])
 
 P_0 = 1.0e7 #surface pressure (Pa)
 T_0 = 300.0 #surface temperature (K)
 
 #P_ad_hhe = 1.0e9 #pressure to switch to adiabatic H/He profile
-Pad = 1.0e9 #pressure to switch to adiabatic temperature profile
+Pad = 1.0e8 #pressure to switch to adiabatic temperature profile
 
 #EOS information
 
