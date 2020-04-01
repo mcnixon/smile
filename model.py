@@ -30,7 +30,7 @@ class Model:
         if x_w is None:
             self.mass_fractions = np.copy(params.mass_fractions)
         else:
-            x_fe = (1.0/3.0)*(1.0-x_w)
+            x_fe = (1.0/2.0)*(1.0-x_w)
             x_si = 1.0 - (x_fe + x_w)
             self.mass_fractions = np.array([x_fe,x_si,x_w])
 
@@ -51,7 +51,7 @@ class Model:
             self.eos_data[component] = eos.EOS(component)
             self.rho_dict[component] = self.eos_data[component].get_eos(self.pressure_grid,np.log10(params.Pad),np.log10(self.T0))
 
-    def find_Rp(self,steps=2.0e4,mode='python'):
+    def find_Rp(self,steps=2.0e4,mode='c'):
         
         solved = False
         Rp_range = np.copy(params.Rp_range)
@@ -60,7 +60,7 @@ class Model:
             start = time.time()
             Rp_choice = np.mean(Rp_range)
             #Rp_choice = 1.3663574218750003
-            print(Rp_choice)
+            #print(Rp_choice)
 
             #Yp0 = self.ode_sys(self.mass*params.MEarth,np.array([self.P0,Rp_choice*params.REarth]))
 
@@ -71,9 +71,9 @@ class Model:
             #soln = euler(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,2.0e4)
 
             if mode=='python':
-                print('Pre function call: '+str(time.time()-start))
+                #print('Pre function call: '+str(time.time()-start))
                 soln = rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,steps)
-                print('Post function call: '+str(time.time()-start))
+                #print('Post function call: '+str(time.time()-start))
                 final_r = soln[-1][-1]
 
             import ctypes
@@ -113,10 +113,10 @@ class Model:
             #np.savetxt('c_test_pgrid.dat',pgrid)
             #quit()
             if mode == 'c':
-                print('Pre function call: '+str(time.time()-start))
+                #print('Pre function call: '+str(time.time()-start))
                 soln = solver.rk4(y0_p, mass_p,ctypes.c_double(0.0),steps_p,mass_bds_p,pgrid_p,eos_p)
                 final_r = np.copy(soln)
-                print('Post function call: '+str(time.time()-start))
+                #print('Post function call: '+str(time.time()-start))
 
             #print(soln.t)
             #print(soln.y)
@@ -151,7 +151,7 @@ class Model:
 
             #final_r = np.copy(soln)
             final_m = 0.0
-            print('Final R = '+str(final_r))
+            #print('Final R = '+str(final_r))
             #quit()
 
             if final_r < 0 or final_m > 0:
