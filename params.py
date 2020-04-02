@@ -3,8 +3,8 @@
 import numpy as np
 
 #MR curve settings (MEarth)
-mass_upper = 10
-mass_lower = 5.0
+mass_upper = 10.5
+mass_lower = 0.5
 mass_step = 0.5
 
 #mass fractions: Fe, MgPv, H2O, remainder in H/He

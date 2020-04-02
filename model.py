@@ -10,8 +10,9 @@ from scipy.integrate import solve_ivp
 class Model:
     '''Model parameters for a given mass'''
 
-    def __init__(self,mass):
+    def __init__(self,mass,mode):
 
+        self.mode = mode
         self.P0 = params.P_0
     
         #choosing step sizes for each component to create mass grid
@@ -44,16 +45,20 @@ class Model:
 
         while solved is False:
             Rp_choice = np.mean(Rp_range)
+            #Rp_choice = 1.7738769531249998
             print(Rp_choice)
 
-            Yp0 = self.ode_sys(self.mass*params.MEarth,np.array([self.P0,Rp_choice*params.REarth]))
+            #Yp0 = self.ode_sys(self.mass*params.MEarth,np.array([self.P0,Rp_choice*params.REarth]))
 
             #soln = r8_rkf45(self.ode_sys, 2, np.array([self.P0,Rp_choice*params.REarth]), Yp0, self.mass*params.MEarth, 0, 1.0e-2, 1.0e5, 1)
 
             #soln = solve_ivp(self.ode_sys, (self.mass*params.MEarth,0), np.array([self.P0,Rp_choice*params.REarth]),max_step=1.0e20)
 
             #soln = euler(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,2.0e4)
-            soln = rk4_a(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0)#,steps)
+            if self.mode == 'adaptive':
+                soln = rk4_a(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0)#,steps)
+            else:
+                soln = rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,steps)
 
             #print(soln.t)
             #print(soln.y)
@@ -87,7 +92,7 @@ class Model:
             final_m = soln[0]
 
             print(final_r,final_m)
-
+            #quit()
 
             if final_r < 0 or final_m > 0:
                 Rp_range[0] = Rp_choice
@@ -120,7 +125,10 @@ class Model:
         rho = 10**lrho
         dr_dm = 1.0/(4.0*np.pi*r**2*rho)
 
-        return((np.array([dp_dm,dr_dm]),lrho))
+        if self.mode == 'adaptive':
+            return((np.array([dp_dm,dr_dm]),lrho))
+        else:
+            return np.array([dp_dm,dr_dm])
 
 def euler(f, y0, t0, t_end, nsteps):
     t = np.linspace(t0,t_end,nsteps)
@@ -145,6 +153,8 @@ def rk4(f, y0, t0, t_end, nsteps):
 
         y[i+1] = y[i] + (k1+2*k2+2*k3+k4)*(1.0/6.0)
 
+    np.savetxt('../nonadaptive.txt',np.c_[t,y[:,1]])
+
     return(t[-1],y[-1])
 
 def rk4_a(f, y0, t0, t_end):
@@ -153,6 +163,11 @@ def rk4_a(f, y0, t0, t_end):
     h = -t0*1.0e-3
     h_min = -t0*1.0e-5
     h_max = -t0*1.0e-2
+
+    t_save = np.array([t])
+    y_save = np.array([y[1]])
+
+    no_increase = False
 
     while np.logical_and(t > 0,y[1] > 0):
 
@@ -180,46 +195,71 @@ def rk4_a(f, y0, t0, t_end):
 
         last = False
         
+        #if t_new == 0 and y_new[1] < 0:
+        #    last = True
+        #    step = 'step too big'
+        #    h *= 0.5
+        #elif t_new == 0:
+        #    step = 'step taken'
+        #    #print(h/t0,delta_rho,step)
+        #    y = y_new
+        #    t = t_new            
+        #elif h == h_min:
+        #    step = 'step taken'
+        #    #print(h/t0,delta_rho,step)
+        #    y = y_new
+        #    t = t_new
+        #elif h == h_max:
+        #    step = 'step taken'
+        #    #print(h/t0,delta_rho,step)
+        #    y = y_new
+        #    t = t_new            
+        #elif delta_rho > delta_rho_max:
+        #    step = 'step too big'
+        #    #print(h/t0,delta_rho,step)
+        #    h *= 0.8
+        #    if np.abs(h) < np.abs(h_min):
+        #        h = h_min
+        #elif delta_rho < delta_rho_min:
+        #    if last:
+        #        y = y_new
+        #        t = t_new
+        #    step = 'step too small'
+        #    #print(h/t0,delta_rho,step)
+        #    h /= 0.8
+        #    if np.abs(h) > np.abs(h_max):
+        #        h = h_max
+        #else:
+        #    step = 'step taken'
+        #    #print(h/t0,delta_rho,step)
+        #    y = y_new
+        #    t = t_new
+
+        step = 'not taken'
         if t_new == 0 and y_new[1] < 0:
-            last = True
-            step = 'step too big'
+            #print('final overshot')
+            no_increase = True
             h *= 0.5
-        elif t_new == 0:
-            step = 'step taken'
-            #print(h/t0,delta_rho,step)
-            y = y_new
-            t = t_new            
-        elif h == h_min:
-            step = 'step taken'
-            #print(h/t0,delta_rho,step)
-            y = y_new
-            t = t_new
-        elif h == h_max:
-            step = 'step taken'
-            #print(h/t0,delta_rho,step)
-            y = y_new
-            t = t_new            
-        elif delta_rho > delta_rho_max:
-            step = 'step too big'
-            #print(h/t0,delta_rho,step)
+        elif delta_y[1] > 0.01*y0[1]:
+            #print('singularity')
+            no_increase = True
+            h *= 0.5
+        elif delta_rho > delta_rho_max and h>h_min:
+            print('d rho too large')
             h *= 0.8
-            if np.abs(h) < np.abs(h_min):
-                h = h_min
-        elif delta_rho < delta_rho_min:
-            if last:
-                y = y_new
-                t = t_new
-            step = 'step too small'
-            #print(h/t0,delta_rho,step)
+        elif no_increase is False and delta_rho < delta_rho_min and h<h_max:
             h /= 0.8
-            if np.abs(h) > np.abs(h_max):
-                h = h_max
         else:
             step = 'step taken'
-            #print(h/t0,delta_rho,step)
             y = y_new
             t = t_new
 
+        #print(step)
+        if step == 'step taken':
+            t_save = np.append(t_save,t)
+            y_save = np.append(y_save,y[1])
+
+    #np.savetxt('../adaptive_soln2.txt',np.c_[t_save,y_save])
     return(t,y)
 
 def rkf(f, y0, t0, t_end):
