@@ -10,16 +10,30 @@ from scipy.integrate import solve_ivp
 class Model:
     '''Model parameters for a given mass'''
 
-    def __init__(self,mass,mode):
+    def __init__(self,mass,P0=None,T0=None,x_w=None,mode='adaptive'):
 
         self.mode = mode
-        self.P0 = params.P_0
-    
+        
+        if P0 is None:
+            self.P0 = params.P_0
+        else:
+            self.P0 = P0
+
+        if T0 is None:
+            self.T0 = params.T_0
+        else:
+            self.T0 = T0
+            
         #choosing step sizes for each component to create mass grid
 
         self.mass = mass
 
-        self.mass_fractions = np.copy(params.mass_fractions)
+        if x_w is None:
+            self.mass_fractions = np.copy(params.mass_fractions)
+        else:
+            x_fe = (1.0/2.0)*(1.0-x_w)
+            x_si = 1.0 - (x_fe + x_w)
+            self.mass_fractions = np.array([x_fe,x_si,x_w])
 
         if len(params.components) > len(self.mass_fractions):
             self.mass_fractions = np.append(self.mass_fractions,1.0-np.sum(self.mass_fractions))
@@ -36,16 +50,16 @@ class Model:
 
         for component in params.components:
             self.eos_data[component] = eos.EOS(component)
-            self.rho_dict[component] = self.eos_data[component].get_eos(self.pressure_grid,np.log10(params.Pad),np.log10(params.T_0))
+            self.rho_dict[component] = self.eos_data[component].get_eos(self.pressure_grid,np.log10(params.Pad),np.log10(self.T0))
 
-    def find_Rp(self,steps=2.0e4):
+    def find_Rp(self,steps=8.0e4):
 
         solved = False
         Rp_range = np.copy(params.Rp_range)
 
         while solved is False:
             Rp_choice = np.mean(Rp_range)
-            #Rp_choice = 1.7738769531249998
+            #Rp_choice = 1.4881394386291502
             print(Rp_choice)
 
             #Yp0 = self.ode_sys(self.mass*params.MEarth,np.array([self.P0,Rp_choice*params.REarth]))
@@ -56,7 +70,7 @@ class Model:
 
             #soln = euler(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,2.0e4)
             if self.mode == 'adaptive':
-                soln = rk4_a(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0)#,steps)
+                soln = rk4_a(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,self.mass_bds)#,steps)
             else:
                 soln = rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,steps)
 
@@ -157,7 +171,7 @@ def rk4(f, y0, t0, t_end, nsteps):
 
     return(t[-1],y[-1])
 
-def rk4_a(f, y0, t0, t_end):
+def rk4_a(f, y0, t0, t_end,mass_bds):
     y = np.copy(y0)
     t = np.copy(t0)
     h = -t0*1.0e-3
@@ -166,25 +180,39 @@ def rk4_a(f, y0, t0, t_end):
 
     t_save = np.array([t])
     y_save = np.array([y[1]])
+    rho_save = None
 
     no_increase = False
+    force_step = False
 
     while np.logical_and(t > 0,y[1] > 0):
 
         if np.abs(h) > t:
             h = -t
-        
+
+        if t > 0:
+            component_idx = np.argmax(mass_bds[np.where(mass_bds*params.MEarth<t)])
+        else:
+            component_idx = 0
+            
         k1 = h*f(t,y)[0]
         k2 = h*f(t+0.5*h,y+0.5*k1)[0]
         k3 = h*f(t+0.5*h,y+0.5*k2)[0]
         k4 = h*f(t+h,y+k3)[0]
 
         lrho = f(t,y)[1]
+        if rho_save is None:
+            rho_save = np.array([lrho])
 
         delta_y = (k1+2*k2+2*k3+k4)*(1.0/6.0)
 
         y_new = y + delta_y
         t_new = t + h
+
+        if t_new > 0:
+            component_idx_new = np.argmax(mass_bds[np.where(mass_bds*params.MEarth<t_new)])
+        else:
+            component_idx_new = 0
 
         lrho_new = f(t_new,y_new)[1]
 
@@ -235,31 +263,68 @@ def rk4_a(f, y0, t0, t_end):
         #    y = y_new
         #    t = t_new
 
+        #print(delta_rho,h,t)
+        
         step = 'not taken'
-        if t_new == 0 and y_new[1] < 0:
-            #print('final overshot')
+        if force_step:
+            step = 'step taken'
+            #print('boundary '+step)
+            y = y_new
+            t = t_new
+            no_increase = False
+            force_step = False
+        elif component_idx ==0:
+            step = 'step taken'
+            h = -mass_bds[component_idx+1]*params.MEarth*0.002
+            force_step = True
+        elif component_idx_new != component_idx:
+            bd_edge = mass_bds[component_idx]*params.MEarth+t0*5.0e-6
+            if t <= bd_edge:
+                h = -t0*1.0e-5
+                force_step = True
+                #print('step fixed for boundary cross')
+            else:
+                h = bd_edge - t
+                #print(h,bd_edge,t)
+                #print('boundary adjustment')
+                no_increase = True
+        elif t_new == 0:
             no_increase = True
-            h *= 0.5
-        elif delta_y[1] > 0.01*y0[1]:
+            if y_new[1] < 0:
+                #print('final overshot')
+                h *= 0.5
+            else:
+                step = 'step taken'
+                #print('final '+step)
+                y = y_new
+                t = t_new
+        #elif t < 0.01*t0:
+        #    h = -0.0001*t0
+        #    force_step = True
+        elif np.abs(delta_y[1]) > 0.002*y0[1] and y_new[1] > 0:
             #print('singularity')
             no_increase = True
             h *= 0.5
-        elif delta_rho > delta_rho_max and h>h_min:
-            print('d rho too large')
+        elif delta_rho > delta_rho_max and np.abs(h)>np.abs(h_min):
+            #print('d rho too large')
             h *= 0.8
-        elif no_increase is False and delta_rho < delta_rho_min and h<h_max:
+        elif no_increase is False and delta_rho < delta_rho_min and np.abs(h)<np.abs(h_max):
+            #print('d rho too small')
             h /= 0.8
         else:
             step = 'step taken'
+            #print(step)
             y = y_new
             t = t_new
+            no_increase = False
 
         #print(step)
         if step == 'step taken':
             t_save = np.append(t_save,t)
             y_save = np.append(y_save,y[1])
+            rho_save = np.append(rho_save,lrho_new)
 
-    #np.savetxt('../adaptive_soln2.txt',np.c_[t_save,y_save])
+    #np.savetxt('../adaptive_soln1.txt',np.c_[t_save,y_save,rho_save])
     return(t,y)
 
 def rkf(f, y0, t0, t_end):

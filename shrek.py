@@ -5,11 +5,11 @@ import params
 import eos
 import model
 
-def mr_curve(mode):
+def mr_curve(P0=None, T0=None, x_w=None,mode='adaptive'):
     masses = np.arange(params.mass_lower,params.mass_upper,params.mass_step)
     radii = np.zeros_like(masses)
     for i,m in enumerate(masses):
-        int_model = model.Model(m,mode)
+        int_model = model.Model(m,P0,T0,x_w,mode)
         print(m)
         radii[i] = int_model.find_Rp()
 
