@@ -10,9 +10,11 @@ from scipy.integrate import solve_ivp
 class Model:
     '''Model parameters for a given mass'''
 
-    def __init__(self,mass,P0=None,T0=None,x_w=None,mode='adaptive'):
+    def __init__(self,mass,P0=None,T0=None,x_w=None,mode='adaptive',profiles=False):
 
         self.mode = mode
+        self.profiles = profiles
+        self.x_w = x_w
         
         if P0 is None:
             self.P0 = params.P_0
@@ -31,7 +33,7 @@ class Model:
         if x_w is None:
             self.mass_fractions = np.copy(params.mass_fractions)
         else:
-            x_fe = (1.0/2.0)*(1.0-x_w)
+            x_fe = (1.0/3.0)*(1.0-x_w)
             x_si = 1.0 - (x_fe + x_w)
             self.mass_fractions = np.array([x_fe,x_si,x_w])
 
@@ -47,19 +49,39 @@ class Model:
 
         self.eos_data = {}
         self.rho_dict = {}
+        if self.profiles:
+            self.T_dict = {}
 
         for component in params.components:
             self.eos_data[component] = eos.EOS(component)
-            self.rho_dict[component] = self.eos_data[component].get_eos(self.pressure_grid,np.log10(params.Pad),np.log10(self.T0))
+            rho_T = self.eos_data[component].get_eos(self.pressure_grid,np.log10(params.Pad),np.log10(self.T0))
+            self.rho_dict[component] = rho_T[0]
+            if self.profiles:
+                self.T_dict[component] = rho_T[1]
+
+        #find H2O layer step size
+        #R_c = 0.6*params.REarth
+        #dlrho_dlP = np.gradient(self.rho_dict['h2o'],self.pressure_grid[1]-self.pressure_grid[0])
+        #import matplotlib.pyplot as plt
+        #plt.plot(self.pressure_grid,self.rho_dict['h2o'])
+        #plt.show()
+        #dlrho_dlP_max = 0.07#1.0#np.amax(dlrho_dlP)
+        #dlrho_max = 0.1
+        #print(dlrho_max,self.P0,R_c,self.mass*params.MEarth,dlrho_dlP_max)
+        #self.dm_h2o = -dlrho_max*4.0*np.pi*self.P0*R_c**4/(params.G*self.mass*params.MEarth*dlrho_dlP_max)
+        #print(self.dm_h2o)
+        #quit()
 
     def find_Rp(self,steps=8.0e4):
 
         solved = False
         Rp_range = np.copy(params.Rp_range)
+        self.mass_profile = None
 
         while solved is False:
             Rp_choice = np.mean(Rp_range)
-            #Rp_choice = 1.4881394386291502
+            #Rp_choice = 1.3075939953518174#1.3075939953447233
+            #Rp_choice = 1.0
             print(Rp_choice)
 
             #Yp0 = self.ode_sys(self.mass*params.MEarth,np.array([self.P0,Rp_choice*params.REarth]))
@@ -70,9 +92,17 @@ class Model:
 
             #soln = euler(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,2.0e4)
             if self.mode == 'adaptive':
-                soln = rk4_a(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,self.mass_bds)#,steps)
-            else:
-                soln = rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,steps)
+                soln = self.rk4_a(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0)
+
+            if self.mode == 'adaptive_new':
+                if self.mass_profile is None:
+                    soln_init = self.rk4_a(self.ode_sys, np.array([self.P0,4.0*params.REarth]),self.mass*params.MEarth,0.0)
+                    continue
+                else:
+                    soln = self.rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]),self.mass*params.MEarth,0.0)
+
+            #else:
+            #    soln = rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,steps)
 
             #print(soln.t)
             #print(soln.y)
@@ -117,6 +147,10 @@ class Model:
                 print('Rp = '+str(Rp_choice))
                 #quit()
                 Rp_final = Rp_choice
+
+                #if self.profiles:
+                    #np.savetxt('../mr_out/profiles_M'+str(self.mass)+'_P'+str(self.P0)+'_T'+str(self.T0)+'_xw'+str(self.x_w)+'.out',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
+                
                 solved = True
         return Rp_final
 
@@ -139,11 +173,172 @@ class Model:
         rho = 10**lrho
         dr_dm = 1.0/(4.0*np.pi*r**2*rho)
 
-        if self.mode == 'adaptive':
+        if self.mode == 'adaptive' or self.mode == 'adaptive_new':
             return((np.array([dp_dm,dr_dm]),lrho))
         else:
             return np.array([dp_dm,dr_dm])
 
+    def rk4_a(self,f, y0, t0, t_end):
+        y = np.copy(y0)
+        t = np.copy(t0)
+        h = -t0*1.0e-3
+        h_min = -t0*1.0e-5
+        h_max = -t0*1.0e-2
+
+        if self.profiles:
+            self.mass_profile = np.array([t])
+            self.pressure_profile = np.array([np.log10(y[0])])
+            self.radius_profile = np.array([y[1]])
+            self.density_profile = None
+            self.temperature_profile = None
+            self.component_profile = None
+        
+        no_increase = False
+        force_step = False
+
+        while np.logical_and(t > 0,y[1] > 0):
+
+            if np.abs(h) > t:
+                h = -t
+
+            if t > 0:
+                component_idx = np.argmax(self.mass_bds[np.where(self.mass_bds*params.MEarth<t)])
+            else:
+                component_idx = 0
+            
+            k1 = h*f(t,y)[0]
+            k2 = h*f(t+0.5*h,y+0.5*k1)[0]
+            k3 = h*f(t+0.5*h,y+0.5*k2)[0]
+            k4 = h*f(t+h,y+k3)[0]
+
+            lrho = f(t,y)[1]
+            if self.profiles:
+                if self.density_profile is None:
+                    self.density_profile = np.array([lrho])
+                    self.temperature_profile = np.interp(np.log10(y[0]),self.pressure_grid,self.T_dict[params.components[component_idx]])
+                    self.component_profile = component_idx
+
+            delta_y = (k1+2*k2+2*k3+k4)*(1.0/6.0)
+
+            y_new = y + delta_y
+            t_new = t + h
+
+            if t_new > 0:
+                component_idx_new = np.argmax(self.mass_bds[np.where(self.mass_bds*params.MEarth<t_new)])
+            else:
+                component_idx_new = 0
+
+            lrho_new = f(t_new,y_new)[1]
+            if self.profiles:
+                lT_new = np.interp(np.log10(y_new[0]),self.pressure_grid,self.T_dict[params.components[component_idx_new]])
+
+            delta_rho = np.abs(lrho_new-lrho)
+
+            delta_rho_max = 1.0e-1
+            delta_rho_min = 1.0e-3
+
+            last = False
+            step = 'not taken'
+            if force_step:
+                step = 'step taken'
+                #print('boundary '+step)
+                y = y_new
+                t = t_new
+                no_increase = False
+                force_step = False
+            elif component_idx ==0:
+                step = 'step adjusted'
+                h = -self.mass_bds[component_idx+1]*params.MEarth*0.001
+                force_step = True
+            elif component_idx_new != component_idx:
+                bd_edge = self.mass_bds[component_idx]*params.MEarth+t0*5.0e-6
+                if t <= bd_edge:
+                    h = -t0*1.0e-5
+                    force_step = True
+                    #print('step fixed for boundary cross')
+                else:
+                    h = bd_edge - t
+                    #print(h,bd_edge,t)
+                    #print('boundary adjustment')
+                    no_increase = True
+            elif t_new == 0: #line up with elif
+                no_increase = True
+                if y_new[1] < 0:
+                    #print('final overshot')
+                    h *= 0.5
+                else:
+                    step = 'step taken'
+                    #print('final '+step)
+                    y = y_new
+                    t = t_new
+            #elif t < 0.01*t0:
+            #    h = -0.0001*t0
+            #    force_step = True
+            elif np.abs(delta_y[1]) > 0.002*y0[1] and y_new[1] > 0:
+                #print('singularity')
+                no_increase = True
+                h *= 0.5
+            elif delta_rho > delta_rho_max and np.abs(h)>np.abs(h_min):
+                #print('d rho too large')
+                h *= 0.8
+            elif no_increase is False and delta_rho < delta_rho_min and np.abs(h)<np.abs(h_max):
+                #print('d rho too small')
+                h /= 0.8
+            else:
+                step = 'step taken'
+                #print(step)
+                y = y_new
+                t = t_new
+                no_increase = False
+
+            if step == 'step taken':
+                if self.profiles:
+                    self.mass_profile = np.append(self.mass_profile,t)
+                    self.pressure_profile = np.append(self.pressure_profile,np.log10(y[0]))
+                    self.radius_profile = np.append(self.radius_profile,y[1])
+                    self.density_profile = np.append(self.density_profile,lrho_new)
+                    self.temperature_profile = np.append(self.temperature_profile,lT_new)
+                    self.component_profile = np.append(self.component_profile,component_idx_new)
+
+        #np.savetxt('../R1_profile.txt',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
+        return(t,y)
+
+
+    def rk4(self,f, y0, t0, t_end):
+        t = self.mass_profile
+        y = np.zeros((len(t),len(y0)))
+        y[0] = y0             
+        h = t[1:]-t[:-1]
+        
+        if self.profiles:
+            self.density_profile = np.zeros_like(t)
+            self.temperature_profile = np.zeros_like(t)
+            self.component_profile = np.zeros_like(t).astype(int)
+            self.density_profile[0] = f(t[0],y[0])[1]
+            self.component_profile[0] = np.argmax(self.mass_bds[np.where(self.mass_bds*params.MEarth<t0)])
+            self.temperature_profile[0] = np.interp(np.log10(y0[0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[0]]])
+        
+        for i in range(len(t)-1):
+            k1 = h[i]*f(t[i],y[i])[0]
+            k2 = h[i]*f(t[i]+0.5*h[i],y[i]+0.5*k1)[0]
+            k3 = h[i]*f(t[i]+0.5*h[i],y[i]+0.5*k2)[0]
+            k4 = h[i]*f(t[i]+h[i],y[i]+k3)[0]
+
+            y[i+1] = y[i] + (k1+2*k2+2*k3+k4)*(1.0/6.0)
+
+            if self.profiles:
+                self.density_profile[i+1] = f(t[i+1],y[i+1])[1]
+                if t[i+1] > 0:
+                    self.component_profile[i+1] = np.argmax(self.mass_bds[np.where(self.mass_bds*params.MEarth<t[i+1])])
+                else:
+                    self.component_profile[i+1] = 0
+                self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
+
+        #if self.profiles:
+            #np.savetxt('../mr_out/profiles_M'+str(self.mass)+'_P'+str(self.P0)+'_T'+str(self.T0)+'_xw'+str(self.x_w)+'.out',np.c_[t,y[:,1],np.log10(y[:,0]),self.temperature_profile,self.density_profile,self.component_profile])
+
+        return(t[-1],y[-1])
+    
 def euler(f, y0, t0, t_end, nsteps):
     t = np.linspace(t0,t_end,nsteps)
     h = (t_end-t0)/nsteps
@@ -153,179 +348,6 @@ def euler(f, y0, t0, t_end, nsteps):
         y[i+1] = y[i] + h*f(t[i],y[i])
 
     return(t[-1],y[-1])
-
-def rk4(f, y0, t0, t_end, nsteps):
-    t = np.linspace(t0,t_end,nsteps)
-    h = (t_end-t0)/nsteps
-    y = np.zeros((len(t),len(y0)))
-    y[0] = y0
-    for i in range(len(t)-1):
-        k1 = h*f(t[i],y[i])
-        k2 = h*f(t[i]+0.5*h,y[i]+0.5*k1)
-        k3 = h*f(t[i]+0.5*h,y[i]+0.5*k2)
-        k4 = h*f(t[i]+h,y[i]+k3)
-
-        y[i+1] = y[i] + (k1+2*k2+2*k3+k4)*(1.0/6.0)
-
-    np.savetxt('../nonadaptive.txt',np.c_[t,y[:,1]])
-
-    return(t[-1],y[-1])
-
-def rk4_a(f, y0, t0, t_end,mass_bds):
-    y = np.copy(y0)
-    t = np.copy(t0)
-    h = -t0*1.0e-3
-    h_min = -t0*1.0e-5
-    h_max = -t0*1.0e-2
-
-    t_save = np.array([t])
-    y_save = np.array([y[1]])
-    rho_save = None
-
-    no_increase = False
-    force_step = False
-
-    while np.logical_and(t > 0,y[1] > 0):
-
-        if np.abs(h) > t:
-            h = -t
-
-        if t > 0:
-            component_idx = np.argmax(mass_bds[np.where(mass_bds*params.MEarth<t)])
-        else:
-            component_idx = 0
-            
-        k1 = h*f(t,y)[0]
-        k2 = h*f(t+0.5*h,y+0.5*k1)[0]
-        k3 = h*f(t+0.5*h,y+0.5*k2)[0]
-        k4 = h*f(t+h,y+k3)[0]
-
-        lrho = f(t,y)[1]
-        if rho_save is None:
-            rho_save = np.array([lrho])
-
-        delta_y = (k1+2*k2+2*k3+k4)*(1.0/6.0)
-
-        y_new = y + delta_y
-        t_new = t + h
-
-        if t_new > 0:
-            component_idx_new = np.argmax(mass_bds[np.where(mass_bds*params.MEarth<t_new)])
-        else:
-            component_idx_new = 0
-
-        lrho_new = f(t_new,y_new)[1]
-
-        delta_rho = np.abs(lrho_new-lrho)
-
-        delta_rho_max = 1.0e-1
-        delta_rho_min = 1.0e-3
-
-        last = False
-        
-        #if t_new == 0 and y_new[1] < 0:
-        #    last = True
-        #    step = 'step too big'
-        #    h *= 0.5
-        #elif t_new == 0:
-        #    step = 'step taken'
-        #    #print(h/t0,delta_rho,step)
-        #    y = y_new
-        #    t = t_new            
-        #elif h == h_min:
-        #    step = 'step taken'
-        #    #print(h/t0,delta_rho,step)
-        #    y = y_new
-        #    t = t_new
-        #elif h == h_max:
-        #    step = 'step taken'
-        #    #print(h/t0,delta_rho,step)
-        #    y = y_new
-        #    t = t_new            
-        #elif delta_rho > delta_rho_max:
-        #    step = 'step too big'
-        #    #print(h/t0,delta_rho,step)
-        #    h *= 0.8
-        #    if np.abs(h) < np.abs(h_min):
-        #        h = h_min
-        #elif delta_rho < delta_rho_min:
-        #    if last:
-        #        y = y_new
-        #        t = t_new
-        #    step = 'step too small'
-        #    #print(h/t0,delta_rho,step)
-        #    h /= 0.8
-        #    if np.abs(h) > np.abs(h_max):
-        #        h = h_max
-        #else:
-        #    step = 'step taken'
-        #    #print(h/t0,delta_rho,step)
-        #    y = y_new
-        #    t = t_new
-
-        #print(delta_rho,h,t)
-        
-        step = 'not taken'
-        if force_step:
-            step = 'step taken'
-            #print('boundary '+step)
-            y = y_new
-            t = t_new
-            no_increase = False
-            force_step = False
-        elif component_idx ==0:
-            step = 'step taken'
-            h = -mass_bds[component_idx+1]*params.MEarth*0.002
-            force_step = True
-        elif component_idx_new != component_idx:
-            bd_edge = mass_bds[component_idx]*params.MEarth+t0*5.0e-6
-            if t <= bd_edge:
-                h = -t0*1.0e-5
-                force_step = True
-                #print('step fixed for boundary cross')
-            else:
-                h = bd_edge - t
-                #print(h,bd_edge,t)
-                #print('boundary adjustment')
-                no_increase = True
-        elif t_new == 0:
-            no_increase = True
-            if y_new[1] < 0:
-                #print('final overshot')
-                h *= 0.5
-            else:
-                step = 'step taken'
-                #print('final '+step)
-                y = y_new
-                t = t_new
-        #elif t < 0.01*t0:
-        #    h = -0.0001*t0
-        #    force_step = True
-        elif np.abs(delta_y[1]) > 0.002*y0[1] and y_new[1] > 0:
-            #print('singularity')
-            no_increase = True
-            h *= 0.5
-        elif delta_rho > delta_rho_max and np.abs(h)>np.abs(h_min):
-            #print('d rho too large')
-            h *= 0.8
-        elif no_increase is False and delta_rho < delta_rho_min and np.abs(h)<np.abs(h_max):
-            #print('d rho too small')
-            h /= 0.8
-        else:
-            step = 'step taken'
-            #print(step)
-            y = y_new
-            t = t_new
-            no_increase = False
-
-        #print(step)
-        if step == 'step taken':
-            t_save = np.append(t_save,t)
-            y_save = np.append(y_save,y[1])
-            rho_save = np.append(rho_save,lrho_new)
-
-    #np.savetxt('../adaptive_soln1.txt',np.c_[t_save,y_save,rho_save])
-    return(t,y)
 
 def rkf(f, y0, t0, t_end):
     y = np.copy(y0)

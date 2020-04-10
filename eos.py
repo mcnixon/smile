@@ -52,6 +52,7 @@ class EOS:
 
         if self.isothermal:
             logrho = np.interp(logPgrid,self.pressure_data,self.rho_data)
+            T_out = np.zeros_like(logrho)
         else:
             logrho = np.zeros_like(logPgrid)
             logT = logTsurf
@@ -77,4 +78,4 @@ class EOS:
                     gradient = self.__get_gradient(logPgrid[i],logT_for_rho)
                     logT += step*gradient
 
-        return logrho
+        return (logrho, T_out)

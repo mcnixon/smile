@@ -15,7 +15,7 @@ P_0 = 1.0e7 #surface pressure (Pa)
 T_0 = 300.0 #surface temperature (K)
 
 #P_ad_hhe = 1.0e9 #pressure to switch to adiabatic H/He profile
-Pad = 1.0e9 #pressure to switch to adiabatic temperature profile
+Pad = 1.0e8 #pressure to switch to adiabatic temperature profile
 
 #EOS information
 
