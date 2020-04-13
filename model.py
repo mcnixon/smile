@@ -59,18 +59,9 @@ class Model:
             if self.profiles:
                 self.T_dict[component] = rho_T[1]
 
-        #find H2O layer step size
-        #R_c = 0.6*params.REarth
-        #dlrho_dlP = np.gradient(self.rho_dict['h2o'],self.pressure_grid[1]-self.pressure_grid[0])
-        #import matplotlib.pyplot as plt
-        #plt.plot(self.pressure_grid,self.rho_dict['h2o'])
-        #plt.show()
-        #dlrho_dlP_max = 0.07#1.0#np.amax(dlrho_dlP)
-        #dlrho_max = 0.1
-        #print(dlrho_max,self.P0,R_c,self.mass*params.MEarth,dlrho_dlP_max)
-        #self.dm_h2o = -dlrho_max*4.0*np.pi*self.P0*R_c**4/(params.G*self.mass*params.MEarth*dlrho_dlP_max)
-        #print(self.dm_h2o)
-        #quit()
+        #H2O liquid-vapour phase boundary
+        self.lv = np.loadtxt('../eos_data/liquid_vapour_bd.txt')
+        self.lv = np.log10(self.lv)
 
     def find_Rp(self,steps=8.0e4):
 
@@ -82,7 +73,7 @@ class Model:
             Rp_choice = np.mean(Rp_range)
             #Rp_choice = 1.3075939953518174#1.3075939953447233
             #Rp_choice = 1.0
-            print(Rp_choice)
+            #print(Rp_choice)
 
             #Yp0 = self.ode_sys(self.mass*params.MEarth,np.array([self.P0,Rp_choice*params.REarth]))
 
@@ -135,7 +126,7 @@ class Model:
             final_r = soln[1][1]
             final_m = soln[0]
 
-            print(final_r,final_m)
+            #print(final_r,final_m)
             #quit()
 
             if final_r < 0 or final_m > 0:
@@ -212,10 +203,19 @@ class Model:
             k4 = h*f(t+h,y+k3)[0]
 
             lrho = f(t,y)[1]
+            lT = np.interp(np.log10(y[0]),self.pressure_grid,self.T_dict[params.components[component_idx]])
+
+            lT_bd = np.interp(np.log10(y[0]),self.lv[:,0],self.lv[:,1])
+            if lT > lT_bd:
+                phase = 'v'
+            else:
+                phase = 'l'
+
+            
             if self.profiles:
                 if self.density_profile is None:
                     self.density_profile = np.array([lrho])
-                    self.temperature_profile = np.interp(np.log10(y[0]),self.pressure_grid,self.T_dict[params.components[component_idx]])
+                    self.temperature_profile = np.array([lT])
                     self.component_profile = component_idx
 
             delta_y = (k1+2*k2+2*k3+k4)*(1.0/6.0)
@@ -229,8 +229,13 @@ class Model:
                 component_idx_new = 0
 
             lrho_new = f(t_new,y_new)[1]
-            if self.profiles:
-                lT_new = np.interp(np.log10(y_new[0]),self.pressure_grid,self.T_dict[params.components[component_idx_new]])
+            lT_new = np.interp(np.log10(y_new[0]),self.pressure_grid,self.T_dict[params.components[component_idx_new]])
+
+            lT_bd = np.interp(np.log10(y[0]),self.lv[:,0],self.lv[:,1])
+            if lT_new > lT_bd:
+                phase_new = 'v'
+            else:
+                phase_new = 'l'
 
             delta_rho = np.abs(lrho_new-lrho)
 
@@ -274,6 +279,8 @@ class Model:
             #elif t < 0.01*t0:
             #    h = -0.0001*t0
             #    force_step = True
+            elif component_idx == 2.0 and phase_new != phase:
+                force_step = True
             elif np.abs(delta_y[1]) > 0.002*y0[1] and y_new[1] > 0:
                 #print('singularity')
                 no_increase = True
