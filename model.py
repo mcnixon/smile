@@ -10,7 +10,7 @@ from scipy.integrate import solve_ivp
 class Model:
     '''Model parameters for a given mass'''
 
-    def __init__(self,mass,P0=None,T0=None,x_w=None,mode='adaptive',profiles=False):
+    def __init__(self,mass,P0=None,T0=None,x_w=None,x_g=None,mode='adaptive',profiles=False):
 
         self.mode = mode
         self.profiles = profiles
@@ -32,10 +32,14 @@ class Model:
 
         if x_w is None:
             self.mass_fractions = np.copy(params.mass_fractions)
-        else:
+        elif x_g is None:
             x_fe = (1.0/3.0)*(1.0-x_w)
             x_si = 1.0 - (x_fe + x_w)
             self.mass_fractions = np.array([x_fe,x_si,x_w])
+        else:
+            x_fe = (1.0/3.0)*(1.0-(x_w+x_g))
+            x_si = 1.0 - (x_fe + x_w + x_g)
+            self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
 
         if len(params.components) > len(self.mass_fractions):
             self.mass_fractions = np.append(self.mass_fractions,1.0-np.sum(self.mass_fractions))
@@ -73,7 +77,7 @@ class Model:
             Rp_choice = np.mean(Rp_range)
             #Rp_choice = 1.3075939953518174#1.3075939953447233
             #Rp_choice = 1.0
-            #print(Rp_choice)
+            print(Rp_choice)
 
             #Yp0 = self.ode_sys(self.mass*params.MEarth,np.array([self.P0,Rp_choice*params.REarth]))
 
@@ -90,10 +94,15 @@ class Model:
                     soln_init = self.rk4_a(self.ode_sys, np.array([self.P0,4.0*params.REarth]),self.mass*params.MEarth,0.0)
                     continue
                 else:
+                    #print(self.mass_profile)
+                    #quit()
                     soln = self.rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]),self.mass*params.MEarth,0.0)
 
-            #else:
-            #    soln = rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0,steps)
+            else:
+                self.mass_profile = np.linspace(self.mass*params.MEarth,0.0,3.0e5)
+                #print(self.mass_profile)
+                #quit()
+                soln = self.rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth]), self.mass*params.MEarth,0.0)
 
             #print(soln.t)
             #print(soln.y)
@@ -126,7 +135,7 @@ class Model:
             final_r = soln[1][1]
             final_m = soln[0]
 
-            #print(final_r,final_m)
+            print(final_r,final_m)
             #quit()
 
             if final_r < 0 or final_m > 0:
@@ -167,7 +176,7 @@ class Model:
         if self.mode == 'adaptive' or self.mode == 'adaptive_new':
             return((np.array([dp_dm,dr_dm]),lrho))
         else:
-            return np.array([dp_dm,dr_dm])
+            return((np.array([dp_dm,dr_dm]),lrho))
 
     def rk4_a(self,f, y0, t0, t_end):
         y = np.copy(y0)
@@ -243,6 +252,7 @@ class Model:
             delta_rho_min = 1.0e-3
 
             last = False
+            new_eos = False
             step = 'not taken'
             if force_step:
                 step = 'step taken'
@@ -251,15 +261,24 @@ class Model:
                 t = t_new
                 no_increase = False
                 force_step = False
-            elif component_idx ==0:
+            elif component_idx == 0:
                 step = 'step adjusted'
                 h = -self.mass_bds[component_idx+1]*params.MEarth*0.001
                 force_step = True
-            elif component_idx_new != component_idx:
+            elif component_idx_new != component_idx:                
                 bd_edge = self.mass_bds[component_idx]*params.MEarth+t0*5.0e-6
                 if t <= bd_edge:
                     h = -t0*1.0e-5
                     force_step = True
+
+                    if component_idx_new == 2:
+                        #Get new H2O EOS
+                        print('getting new H2O eos')
+                        print(10**lT,np.log10(y[0]))
+                        rho_T = self.eos_data['h2o'].get_eos(self.pressure_grid,np.log10(params.Pad),lT,np.log10(y[0]))
+                        self.rho_dict['h2o'] = rho_T[0]
+                        self.T_dict['h2o'] = rho_T[1]
+                    
                     #print('step fixed for boundary cross')
                 else:
                     h = bd_edge - t
@@ -307,7 +326,9 @@ class Model:
                     self.temperature_profile = np.append(self.temperature_profile,lT_new)
                     self.component_profile = np.append(self.component_profile,component_idx_new)
 
-        #np.savetxt('../R1_profile.txt',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
+        #print('saving profile')
+        #np.savetxt('../mr_out/first_profile.txt',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
+        #quit()
         return(t,y)
 
 
@@ -334,15 +355,21 @@ class Model:
             y[i+1] = y[i] + (k1+2*k2+2*k3+k4)*(1.0/6.0)
 
             if self.profiles:
-                self.density_profile[i+1] = f(t[i+1],y[i+1])[1]
                 if t[i+1] > 0:
                     self.component_profile[i+1] = np.argmax(self.mass_bds[np.where(self.mass_bds*params.MEarth<t[i+1])])
                 else:
                     self.component_profile[i+1] = 0
+                    
+                if self.component_profile[i] == 3 and self.component_profile[i+1] == 2 and y[i+1,0] > params.Pad: #Calculating H2O EOS below H/He layer
+                    rho_T = self.eos_data['h2o'].get_eos(self.pressure_grid,np.log10(params.Pad),self.temperature_profile[i],np.log10(y[i+1,0]))
+                    self.rho_dict['h2o'] = rho_T[0]
+                    self.T_dict['h2o'] = rho_T[1]
+                
+                self.density_profile[i+1] = f(t[i+1],y[i+1])[1]
                 self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
 
-        #if self.profiles:
-            #np.savetxt('../mr_out/profiles_M'+str(self.mass)+'_P'+str(self.P0)+'_T'+str(self.T0)+'_xw'+str(self.x_w)+'.out',np.c_[t,y[:,1],np.log10(y[:,0]),self.temperature_profile,self.density_profile,self.component_profile])
+        if self.profiles:
+            np.savetxt('../mr_out/fixed_profiles_M'+str(self.mass)+'_P'+str(self.P0)+'_T'+str(self.T0)+'_xw'+str(self.x_w)+'.out',np.c_[t,y[:,1],np.log10(y[:,0]),self.temperature_profile,self.density_profile,self.component_profile])
 
         return(t[-1],y[-1])
     

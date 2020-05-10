@@ -47,7 +47,7 @@ class EOS:
         '''Find nearest density'''
         return self.rho_interp(np.c_[logP,logT])
 
-    def get_eos(self,logPgrid,logPad=None,logTsurf=None):
+    def get_eos(self,logPgrid,logPad=None,logTsurf=None,logP_hhb=None):
         '''Compute EOS given a pressure grid, radiative-convective boundary pressure (Pad) and surface T'''
 
         if self.isothermal:
@@ -74,8 +74,13 @@ class EOS:
                 #print(logPgrid[i],logT_for_rho)
                 logrho[i] = self.__get_density(logPgrid[i],logT_for_rho)
 
-                if logPgrid[i] >= logPad:
-                    gradient = self.__get_gradient(logPgrid[i],logT_for_rho)
-                    logT += step*gradient
+                if logP_hhb is None:
+                    if logPgrid[i] >= logPad:
+                        gradient = self.__get_gradient(logPgrid[i],logT_for_rho)
+                        logT += step*gradient
+                else:
+                    if logPgrid[i] >= logP_hhb:
+                        gradient = self.__get_gradient(logPgrid[i],logT_for_rho)
+                        logT += step*gradient
 
         return (logrho, T_out)
