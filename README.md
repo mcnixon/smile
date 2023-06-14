@@ -1,2 +1,2 @@
-# shrek
-Super-eartH inteRior modElling frameworK
+# smile
+Structural Model of Internal Layers of Exoplanets
