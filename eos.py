@@ -224,6 +224,6 @@ class EOS:
                         T_out[i+1] = T_out[i] + step*gradient
             logrho = self.get_density(logPgrid,T_out)
 
-        np.savetxt('PTrho.txt',np.c_[logPgrid,logrho,T_out])
+        #np.savetxt('PTrho.txt',np.c_[logPgrid,logrho,T_out])
             
         return (logrho, T_out)
