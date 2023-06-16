@@ -86,14 +86,22 @@ class Model:
         self.mass_bds = np.cumsum(self.mass_fractions)*self.mass
         self.mass_bds = np.insert(self.mass_bds,0,0)
 
+
+        frac = self.mass_fractions[np.where(self.mass_fractions>0.0)]
+        if frac[-1] > 1.0e-6:
+            self.mass_profile = (1-np.logspace(-8,0,1000))*self.mass
+        else:
+            self.mass_profile = (1-np.logspace(np.log10(0.01*frac[-1]),0,1000))*self.mass
+        self.mass_profile = np.insert(self.mass_profile,0,self.mass)
+        self.mass_profile *= params.MEarth
+
         #get EOS data
 
         self.pressure_grid = params.Pgrid
 
         self.eos_data = {}
         self.rho_dict = {}
-        if self.profiles:
-            self.T_dict = {}
+        self.T_dict = {}
 
         if params.pt == 'Guillot':
             self.f_r = 0.25
@@ -107,19 +115,19 @@ class Model:
             else:
                 rho_T = self.eos_data[component].get_eos(self.pressure_grid,np.log10(self.Pad),np.log10(self.T0))
             self.rho_dict[component] = rho_T[0]
-            if self.profiles:
-                self.T_dict[component] = rho_T[1]
+            self.T_dict[component] = rho_T[1]
 
         #H2O liquid-vapour phase boundary
         self.lv = np.loadtxt('../eos_data/liquid_vapour_bd.txt')
         self.lv = np.log10(self.lv)
+
 
     def find_Rp(self,steps=8.0e4):
 
         solved = False
         count = 0
         Rp_range = np.copy(params.Rp_range)
-        self.mass_profile = None
+        #self.mass_profile = None
 
         T_hhb = 0.0
         P_hhb = 20.0
@@ -129,15 +137,10 @@ class Model:
             if count > 50:
                 print('failed')
                 return ['failed']
-            #if Rp_range[0] > 3.1:
-            #    return np.array([3.1])
             Rp_choice = np.mean(Rp_range)
             if self.mass_profile is None and self.mode == 'adaptive_new':
                 Rp_choice = np.amax(Rp_range)
-            #if self.mass_profile is not None:
-                #Rp_choice = 2.2520408395677802
-            #Rp_choice = 1.0
-            print(Rp_choice)
+            #print(Rp_choice)
 
             if self.hhe_check and self.eos_data['h2o'].isothermal == False:
                 self.rho_dict['h2o'] = None
@@ -170,8 +173,6 @@ class Model:
 
             else:
                 self.mass_profile = np.linspace(self.mass*params.MEarth,0.0,3.0e5)
-                #print(self.mass_profile)
-                #quit()
                 soln = self.rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth,self.tau_0,self.Tsurf]), self.mass*params.MEarth,0.0)
 
             final_r = soln[1][1]
@@ -201,7 +202,7 @@ class Model:
                 Rp_range[1] = Rp_choice
             else:
                 #print('done')
-                print('Rp = '+str(Rp_choice))
+                #print('Rp = '+str(Rp_choice))
                 #quit()
                 Rp_final = Rp_choice
 
@@ -221,7 +222,9 @@ class Model:
             T_hhb = self.temperature_profile[hhb_idx]
             print(P_hhb,T_hhb)
             return(Rp_final,P_hhb,T_hhb)
-        #np.savetxt('../mr_out/new_h2o_profile_T'+str(self.T0)+'_Pad'+str(np.log10(params.Pad))+'.out',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
+        
+        if self.profiles:
+            np.savetxt('../mr_out/profile_M'+str(self.mass)+'_P0'+str(self.P0)+'_T'+str(self.T0)+'_Pad'+str(self.Pad)+'_xw'+str(self.x_w)+'_xg'+str(self.x_g)+'.out',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
         return Rp_final
 
     def ode_sys(self,mass,y):
@@ -319,17 +322,16 @@ class Model:
         else:
             h = -frac[-1]*t0*0.01
 
+
         if np.abs(h)<np.abs(h_min):
             h_min = np.copy(h)
         
-
-        if self.profiles:
-            self.mass_profile = np.array([t])
-            self.pressure_profile = np.array([np.log10(y[0])])
-            self.radius_profile = np.array([y[1]])
-            self.density_profile = None
-            self.temperature_profile = np.array([np.log10(self.Tsurf)])
-            self.component_profile = None
+        self.mass_profile = np.array([t])
+        self.pressure_profile = np.array([np.log10(y[0])])
+        self.radius_profile = np.array([y[1]])
+        self.density_profile = None
+        self.temperature_profile = np.array([np.log10(self.Tsurf)])
+        self.component_profile = None
         
         no_increase = False
         force_step = False
@@ -377,15 +379,11 @@ class Model:
             else:
                 phase = 'l'
 
-            
-            if self.profiles:
-                if self.density_profile is None:
-                    self.density_profile = np.array([lrho])
-                    self.component_profile = component_idx
+            if self.density_profile is None:
+                self.density_profile = np.array([lrho])
+                self.component_profile = component_idx
 
             delta_y = (k1+2*k2+2*k3+k4)*(1.0/6.0)
-
-            #print(y,delta_y)
 
             y_new = y + delta_y
             t_new = t + h
@@ -486,14 +484,13 @@ class Model:
             if step == 'step taken':
                 f0 = np.copy(f_new)
                 #print(np.insert(y,0,np.array([t])))
-                if self.profiles:
-                    self.mass_profile = np.append(self.mass_profile,t)
-                    self.pressure_profile = np.append(self.pressure_profile,np.log10(y[0]))
-                    self.radius_profile = np.append(self.radius_profile,y[1])
-                    self.density_profile = np.append(self.density_profile,lrho_new)
-                    self.temperature_profile = np.append(self.temperature_profile,lT_new)
-                    self.component_profile = np.append(self.component_profile,component_idx_new)
-                    self.lT_current = np.copy(lT_new)
+                self.mass_profile = np.append(self.mass_profile,t)
+                self.pressure_profile = np.append(self.pressure_profile,np.log10(y[0]))
+                self.radius_profile = np.append(self.radius_profile,y[1])
+                self.density_profile = np.append(self.density_profile,lrho_new)
+                self.temperature_profile = np.append(self.temperature_profile,lT_new)
+                self.component_profile = np.append(self.component_profile,component_idx_new)
+                self.lT_current = np.copy(lT_new)
 
         #print('saving profile')
         #np.savetxt('../mr_out/test_profile.txt',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
@@ -503,6 +500,9 @@ class Model:
 
     def rk4(self,f, y0, t0, t_end):
         t = self.mass_profile
+
+        #t = np.insert(t,0,t0)
+            
         #t = np.linspace(t0,0,1.0e5)
         y = np.zeros((len(t),len(y0)))
         y[0] = y0             
@@ -518,11 +518,10 @@ class Model:
         self.component_profile[np.where(t>self.mass_bds[2]*params.MEarth)] = 2
         self.component_profile[np.where(t>self.mass_bds[3]*params.MEarth)] = 3
         
-        if self.profiles:
-            self.density_profile = np.zeros_like(t)
-            self.temperature_profile = np.zeros_like(t)
-            self.density_profile[0] = np.copy(f0[1])
-            self.temperature_profile[0] = np.log10(self.Tsurf)
+        self.density_profile = np.zeros_like(t)
+        self.temperature_profile = np.zeros_like(t)
+        self.density_profile[0] = np.copy(f0[1])
+        self.temperature_profile[0] = self.Tsurf
         
         for i in range(len(t)-1):
             self.mass_step = h[i]
@@ -536,20 +535,20 @@ class Model:
 
             #print(y[i][-1],self.component_profile[i],1.0/(self.gamma*3.0**0.5))
             f1 = f(t[i+1],y[i+1])
-            if self.profiles:
-                self.density_profile[i+1] = f1[1]
-                if params.pt == 'Guillot':
-                    self.temperature_profile[i+1] = f1[2]
-                else:
+            self.density_profile[i+1] = f1[1]
+            if params.pt == 'Guillot':
+                self.temperature_profile[i+1] = f1[2]
+            else:
                     #self.temperature_profile[i+1] = fast_interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
-                    self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
-                f0 = f1
+                self.temperature_profile[i+1] = 10**np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
+            f0 = f1
                     
 
             if y[i+1,1] < 0.0:
                 return(t[i+1],y[i+1])
 
         self.pressure_profile = y[:,0]
+        self.radius_profile = y[:,1]
 
         #np.savetxt('../mr_out/new_h2o_profile_M'+str(self.mass)+'_T'+str(self.T0)+'_P0'+str(np.log10(self.P0))+'_h2o'+str(self.x_w)+'.out',np.c_[t,y[:,1],np.log10(y[:,0]),self.temperature_profile,self.density_profile,self.component_profile])
         #np.savetxt('../mr_out/liquid_profile_M'+str(self.mass)+'.out',np.c_[t,y[:,1],np.log10(y[:,0]),self.temperature_profile,self.density_profile,self.component_profile])
