@@ -205,6 +205,14 @@ class EOS:
         else:
             T_out = np.ones_like(logPgrid)*logTsurf
             step = logPgrid[1] - logPgrid[0]
+
+            if params.T_file is not None:
+                PT_file = np.loadtxt(params.T_file)
+                logPfile = np.log10(PT_file[:,0])
+                logTfile = np.log10(PT_file[:,1])
+                T_out = np.interp(logPgrid,logPfile,logTfile)
+                logPad = np.amax(logPfile)
+            
             for i in range(len(logPgrid)-1):
                 if logP_hhb is None:
                     if logPgrid[i] >= logPad:
@@ -215,4 +223,7 @@ class EOS:
                         gradient = self.get_gradient(logPgrid[i],T_out[i])
                         T_out[i+1] = T_out[i] + step*gradient
             logrho = self.get_density(logPgrid,T_out)
+
+        np.savetxt('PTrho.txt',np.c_[logPgrid,logrho,T_out])
+            
         return (logrho, T_out)
