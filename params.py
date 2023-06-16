@@ -15,7 +15,6 @@ mass_fractions = np.array([0.233,0.467,0.3])
 #mass_fractions = np.array([0.0,0.0,0.0])
 
 P_0 = 1.0e4 #surface pressure (Pa)
-#P_0 = 1.0e5 #surface pressure (Pa)
 T_0 = 300.0 #surface temperature (K)
 
 T_file = None#'steam_gao_f.txt'
