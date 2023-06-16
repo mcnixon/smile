@@ -1,7 +1,7 @@
 # smile
 Structural Model of Internal Layers of Exoplanets
 
-Installation
+**Installation**
 
 Once you have cloned the repository, you will need to download the equation of state (EOS) data and define an environment variable setting the path to the data files.
 
