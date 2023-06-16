@@ -1,6 +1,7 @@
 '''Parameters for interior model'''
 
 import numpy as np
+import os
 
 #MR curve settings (MEarth)
 mass_upper = 3.05
@@ -42,17 +43,11 @@ sigma_SB = 5.6704e-08
 
 eos_files = {}
 
-#loads local files if using Mac OS
-import sys
-if sys.platform == 'darwin':
-    eos_files['fe'] = '../eos_data/fe_eos.dat'
-    eos_files['mgpv'] = '../eos_data/mgpv_eos.dat'
-    eos_files['h2o'] = '../eos_data/h2o_eos_0906.hdf5'
-    #eos_files['h2o'] = '../eos_data/h2o_iso_eos.dat'
-    eos_files['hhe'] = '../eos_data/hhe_eos.hdf5'
+eos_path = os.getenv("eos_path")
 
-else:
-    eos_files['fe'] = '/data/mn442/sunrise/shrek/eos/fe_eos.dat'
-    eos_files['mgpv'] = '/data/mn442/sunrise/shrek/eos/mgpv_eos.dat'
-    eos_files['h2o'] = '/data/mn442/sunrise/shrek/eos/h2o_eos.hdf5'
-    eos_files['hhe'] = '/data/mn442/sunrise/shrek/eos/hhe_eos.hdf5'
+eos_files['fe'] = eos_path+'/fe_eos.dat'
+eos_files['mgpv'] = eos_path+'/mgpv_eos.dat'
+eos_files['h2o'] = eos_path+'/h2o_eos.hdf5'
+eos_files['hhe'] = eos_path+'/hhe_eos.hdf5'
+
+lv_file = eos_path+'/liquid_vapour_bd.txt'
