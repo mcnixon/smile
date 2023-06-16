@@ -17,6 +17,8 @@ P_0 = 1.0e4 #surface pressure (Pa)
 #P_0 = 1.0e5 #surface pressure (Pa)
 T_0 = 300.0 #surface temperature (K)
 
+T_file = None#'steam_gao_f.txt'
+
 #P_ad_hhe = 1.0e9 #pressure to switch to adiabatic H/He profile
 #Pad = 1.0e5 #pressure to switch to adiabatic temperature profile
 #Pad = 2.206e7 #pressure to switch to adiabatic temperature profile
@@ -29,7 +31,7 @@ components = ['fe','mgpv','h2o','hhe']
 #Pgrid = np.arange(4,22,0.01)#log P (Pa)
 Pgrid = np.arange(4,15,0.01)
 
-Rp_range = np.array([0.1,4.0]) #initial guesses for Rp (REarth)
+Rp_range = np.array([0.1,10.0]) #initial guesses for Rp (REarth)
 #Rp_range = np.array([1.4,3.2]) #initial guesses for Rp (REarth)
 
 #constants (SI units)
