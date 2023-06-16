@@ -118,7 +118,8 @@ class Model:
             self.T_dict[component] = rho_T[1]
 
         #H2O liquid-vapour phase boundary
-        self.lv = np.loadtxt('../eos_data/liquid_vapour_bd.txt')
+        self.lv = np.loadtxt(params.lv_file)
+        #self.lv = np.loadtxt('../eos_data/liquid_vapour_bd.txt')
         self.lv = np.log10(self.lv)
 
 
