@@ -5,7 +5,7 @@ import params
 import eos
 import model
 
-def get_radius(mass, P0=None, T0=None, Pad=None, x_si=None, x_w=0.0, x_g=0.0, profiles=False, phases=False):
+def get_radius(mass, P0=None, T0=None, Pad=None, x_si=None, x_w=0.0, x_g=0.0, mixed=False, profiles=False, phases=False):
     '''Find the radius of a planet.
     
     Output: planet radius in Earth radii
@@ -18,17 +18,18 @@ def get_radius(mass, P0=None, T0=None, Pad=None, x_si=None, x_w=0.0, x_g=0.0, pr
     x_si: silicate mass fraction (set to None for Earth-like nucleus)
     x_w: H2O mass fraction
     x_g: H/He mass fraction
+    mixed: Boolean. If True, H/He/H2O are mixed throughout. If False, they are differentiated.
     profiles: Boolean. If True, saves mass, radius, temperature, density and pressure profiles for the final model
     phases: honestly I can't remember what this does, just leave False
     '''
 
     #Initialising the model
-    int_model = model.Model(mass,P0=P0,T0=T0,Pad=Pad,x_si=x_si,x_w=x_w,x_g=x_g,mode=mode,profiles=profiles,phases=phases)
+    int_model = model.Model(mass,P0=P0,T0=T0,Pad=Pad,x_si=x_si,x_w=x_w,x_g=x_g,mixed=mixed,profiles=profiles,phases=phases)
 
     #Solve for and return radius
     return int_model.find_Rp()
 
-def mr_curve(mass_lower=None, mass_upper=None, mass_step=0.5, P0=None, T0=None, Pad=None, x_si=None, x_w=0.0, x_g=0.0, profiles=False, phases=False):
+def mr_curve(mass_lower=None, mass_upper=None, mass_step=0.5, P0=None, T0=None, Pad=None, x_si=None, x_w=0.0, x_g=0.0, mixed=False, profiles=False, phases=False):
     '''Generate a mass-radius curve.
 
     Output: array in the format [masses,radii] (in Earth units)
@@ -42,6 +43,7 @@ def mr_curve(mass_lower=None, mass_upper=None, mass_step=0.5, P0=None, T0=None, 
     Pad: pressure at the radiative-convective boundary (Pa)
     x_w: H2O mass fraction
     x_g: H/He mass fraction
+    mixed: Boolean. If True, H/He/H2O are mixed throughout. If False, they are differentiated.
     profiles: Boolean. If True, saves mass, radius, temperature, density and pressure profiles for the final model
     phases: honestly I can't remember what this does, just leave False
     '''
@@ -55,7 +57,7 @@ def mr_curve(mass_lower=None, mass_upper=None, mass_step=0.5, P0=None, T0=None, 
 
     #Solve for the radius at each mass
     for i,m in enumerate(masses):
-        int_model = model.Model(m,P0=P0,T0=T0,Pad=Pad,x_si=x_si,x_w=x_w,x_g=x_g,mode=mode,profiles=profiles,phases=phases)
+        int_model = model.Model(m,P0=P0,T0=T0,Pad=Pad,x_si=x_si,x_w=x_w,x_g=x_g,mixed=mixed,profiles=profiles,phases=phases)
         print(m)
         radii[i] = int_model.find_Rp()
 

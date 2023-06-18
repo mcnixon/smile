@@ -7,12 +7,14 @@ import numpy as np
 class Model:
     '''Model parameters for a given mass'''
 
-    def __init__(self,mass,P0=None,T0=None,Pad=None,x_si=None,x_w=0.0,x_g=0.0,profiles=False,hhb=False,phases=False,liquid=False):
+    def __init__(self,mass,P0=None,T0=None,Pad=None,x_si=None,x_w=0.0,x_g=0.0,mixed=False,profiles=False,hhb=False,phases=False,liquid=False):
 
         self.profiles = profiles
         self.x_w = x_w
         self.x_g = x_g
         self.hhb = hhb
+
+        self.mixed = mixed
 
         self.phases = phases
 
@@ -83,6 +85,12 @@ class Model:
             self.rho_dict[component] = rho_T[0]
             self.T_dict[component] = rho_T[1]
 
+        if self.mixed:
+            self.env_data = eos.EOS('hhe',component2='h2o')
+            rho_T = self.env_data.get_mixed_eos((self.x_w/(self.x_g+self.x_w)),self.pressure_grid,np.log10(self.Pad),np.log10(self.T0))
+            self.rho_dict['env'] = rho_T[0]
+            self.T_dict['env'] = rho_T[1]
+            
         #H2O liquid-vapour phase boundary
         self.lv = np.loadtxt(params.lv_file)
         self.lv = np.log10(self.lv)
@@ -185,17 +193,17 @@ class Model:
 
         if component_idx == 2 and self.rho_dict['h2o'] is None:
             lT = np.interp(np.log10(p),self.pressure_grid,self.T_dict['hhe'])
-            #lT = fast_interp(np.log10(p),self.pressure_grid,self.T_dict['hhe'])
             rho_T = self.eos_data['h2o'].get_eos(self.pressure_grid,np.log10(self.Pad),lT,np.log10(p))
             self.rho_dict['h2o'] = rho_T[0]
             self.T_dict['h2o'] = rho_T[1]
             
-        #if mass > 0:
-        #    component_idx = np.argmax(self.mass_bds[np.where(self.mass_bds*params.MEarth<mass)])
-        #else:
-        #    component_idx = 0
-        
-        comp = params.components[component_idx]
+        if self.mixed:
+            if component_idx > 1.0:
+                comp = 'env'
+            else:
+                comp = params.components[component_idx]
+        else:        
+            comp = params.components[component_idx]
 
         dp_dm = -(params.G*mass)/(4.0*np.pi*r**4)
         
@@ -219,7 +227,6 @@ class Model:
             rho = 10**lrho
         else:    
             lrho = np.interp(np.log10(p),self.pressure_grid,self.rho_dict[comp])
-            #lrho = fast_interp(np.log10(p),self.pressure_grid,self.rho_dict[comp])
 
             rho = 10**lrho
         dr_dm = 1.0/(4.0*np.pi*r**2*rho)
@@ -247,7 +254,7 @@ class Model:
             return((np.array([dp_dm,dr_dm,dtau_dm,dT_dm]),lrho,T))
         else:
             return((np.array([dp_dm,dr_dm]),lrho))
-
+    
     def rk4(self,f, y0, t0, t_end):
         t = self.mass_profile
 
@@ -286,8 +293,14 @@ class Model:
             if params.pt == 'Guillot':
                 self.temperature_profile[i+1] = f1[2]
             else:
-                    #self.temperature_profile[i+1] = fast_interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
-                self.temperature_profile[i+1] = 10**np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
+                    if self.mixed:
+                        if self.component_profile[i+1] > 1.0:
+                            self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict['env'])
+                        else:
+                            self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
+                    else:
+                        self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
+                
             f0 = f1
                     
 
@@ -298,15 +311,3 @@ class Model:
         self.radius_profile = y[:,1]
 
         return(t[-1],y[-1])
-
-def fast_interp(x,xp,fp):
-    if x >= xp[-1]:
-        return fp[-1]
-    elif x <= xp[0]:
-        return fp[0]
-    else:
-        f_idx = (x-xp[0])/(xp[1]-xp[0])
-        #idx = f_idx.astype(int)
-        idx = int(f_idx)
-        f = f_idx - idx
-        return fp[idx] + f*(fp[idx+1]-fp[idx])

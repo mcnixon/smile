@@ -50,3 +50,7 @@ eos_files['h2o'] = eos_path+'/h2o_eos.hdf5'
 eos_files['hhe'] = eos_path+'/hhe_eos.hdf5'
 
 lv_file = eos_path+'/liquid_vapour_bd.txt'
+
+entropy_files = {}
+entropy_files['hhe'] = eos_path+'/hhe_entropy.hdf5'
+entropy_files['h2o'] = eos_path+'/h2o_entropy_adjusted.hdf5'
