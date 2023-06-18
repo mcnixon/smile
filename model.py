@@ -3,16 +3,12 @@
 import params
 import eos
 import numpy as np
-#from rkf45 import *
-
-from scipy.integrate import solve_ivp
 
 class Model:
     '''Model parameters for a given mass'''
 
-    def __init__(self,mass,P0=None,T0=None,Pad=None,x_w=None,x_g=None,mode='adaptive',profiles=False,hhb=False,phases=False,liquid=False):
+    def __init__(self,mass,P0=None,T0=None,Pad=None,x_si=None,x_w=0.0,x_g=0.0,profiles=False,hhb=False,phases=False,liquid=False):
 
-        self.mode = mode
         self.profiles = profiles
         self.x_w = x_w
         self.x_g = x_g
@@ -42,43 +38,13 @@ class Model:
 
         self.mass = mass
 
-        #x_fe = 0.1*(1.0/3.0)
-        #x_si = 0.1*(2.0/3.0)
-        #x_w = 0.9 - x_g
-        #self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
-        #self.mass_fractions = np.array([0.167,0.333,0.5,0.0])
-        
-        if x_w is None:
-            #self.mass_fractions = np.copy(params.mass_fractions)
-            x_w = (1.0-x_g)/2.0
-            x_fe = (1.0/3.0)*x_w
-            x_si = (2.0/3.0)*x_w
-            self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
-        elif x_g is None:
-            x_fe = (1.0/3.0)*(1.0-x_w)
-            x_si = 1.0 - (x_fe + x_w)
-            self.mass_fractions = np.array([x_fe,x_si,x_w])
-        else:
+        if x_si is None:
             x_fe = (1.0/3.0)*(1.0-(x_w+x_g))
             x_si = 1.0 - (x_fe + x_w + x_g)
-            self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
-
-        if self.hhb:
-            x_w = 0.9 - x_g
-            x_fe = 0.1*(1/3)
-            x_si = 1.0 - (x_w + x_g + x_fe)
-            self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
-
-            #x_w = 0.5 - x_g
-            #x_fe = 0.5*(1/3)
-            #x_si = 1.0 - (x_w + x_g + x_fe)
-            #self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
-
-        #if params.pt == 'Guillot':
-        #    x_fe = (1.0-x_g)*0.1
-        #    x_si = (1.0-x_g)*0.23
-        #    x_w = (1.0-x_g)*0.67
-        #    self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
+            
+        else:
+            x_fe = 1.0 - (x_si + x_w + x_g)
+        self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
 
         if len(params.components) > len(self.mass_fractions):
             self.mass_fractions = np.append(self.mass_fractions,1.0-np.sum(self.mass_fractions))
@@ -119,7 +85,6 @@ class Model:
 
         #H2O liquid-vapour phase boundary
         self.lv = np.loadtxt(params.lv_file)
-        #self.lv = np.loadtxt('../eos_data/liquid_vapour_bd.txt')
         self.lv = np.log10(self.lv)
 
 
@@ -139,9 +104,6 @@ class Model:
                 print('failed')
                 return ['failed']
             Rp_choice = np.mean(Rp_range)
-            if self.mass_profile is None and self.mode == 'adaptive_new':
-                Rp_choice = np.amax(Rp_range)
-            #print(Rp_choice)
 
             if self.hhe_check and self.eos_data['h2o'].isothermal == False:
                 self.rho_dict['h2o'] = None
@@ -162,19 +124,7 @@ class Model:
                 self.y0 = np.array([self.P0,Rp_choice*params.REarth])
                 #define all the variables here
 
-            if self.mode == 'adaptive':
-                soln = self.rk4_a(self.ode_sys,self.y0, self.mass*params.MEarth,0.0)
-
-            if self.mode == 'adaptive_new':
-                if self.mass_profile is None:
-                    soln_init = self.rk4_a(self.ode_sys,self.y0,self.mass*params.MEarth,0.0)
-                    continue
-                else:
-                    soln = self.rk4(self.ode_sys,self.y0,self.mass*params.MEarth,0.0)
-
-            else:
-                self.mass_profile = np.linspace(self.mass*params.MEarth,0.0,3.0e5)
-                soln = self.rk4(self.ode_sys, np.array([self.P0,Rp_choice*params.REarth,self.tau_0,self.Tsurf]), self.mass*params.MEarth,0.0)
+            soln = self.rk4(self.ode_sys,self.y0,self.mass*params.MEarth,0.0)
 
             final_r = soln[1][1]
             final_m = soln[0]
@@ -204,18 +154,9 @@ class Model:
             else:
                 #print('done')
                 #print('Rp = '+str(Rp_choice))
-                #quit()
                 Rp_final = Rp_choice
-
-                #if self.profiles:
-                #    np.savetxt('../mr_out/profile_M'+str(self.mass)+'_P'+str(self.P0)+'_T'+str(self.T0)+'_xw'+str(self.x_w)+'.out',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
                 
                 solved = True
-
-        #hhb_idx = np.argwhere(self.component_profile==3)[-1]
-        #P_hhb = self.pressure_profile[hhb_idx]
-        #T_hhb = self.temperature_profile[hhb_idx]
-        #print(P_hhb,T_hhb)
 
         if self.hhb:
             hhb_idx = np.argwhere(self.component_profile==3)[-1]
@@ -304,207 +245,12 @@ class Model:
 
         if params.pt == 'Guillot':
             return((np.array([dp_dm,dr_dm,dtau_dm,dT_dm]),lrho,T))
-        elif self.mode == 'adaptive' or self.mode == 'adaptive_new':
-            return((np.array([dp_dm,dr_dm]),lrho))
         else:
             return((np.array([dp_dm,dr_dm]),lrho))
-
-    def rk4_a(self,f, y0, t0, t_end):
-        y = np.copy(y0)
-        #print(np.insert(y0,0,np.array([t0])))
-        t = np.copy(t0)
-        h_min = -t0*1.0e-5
-        h_max = -t0*1.0e-2
-
-        #h = -self.mass_fractions[-1]*t0*0.1
-        frac = self.mass_fractions[np.where(self.mass_fractions>0.0)]
-        if frac[-1] > 1.0e-4:
-            h = -t0*1.0e-6
-        else:
-            h = -frac[-1]*t0*0.01
-
-
-        if np.abs(h)<np.abs(h_min):
-            h_min = np.copy(h)
-        
-        self.mass_profile = np.array([t])
-        self.pressure_profile = np.array([np.log10(y[0])])
-        self.radius_profile = np.array([y[1]])
-        self.density_profile = None
-        self.temperature_profile = np.array([np.log10(self.Tsurf)])
-        self.component_profile = None
-        
-        no_increase = False
-        force_step = False
-
-        self.T_prescription = 'non-adiabat'
-
-        f0 = None
-        #h = -t0*1.0e-10
-        while np.logical_and(t > 0,y[1] > 0):
-
-            if np.abs(h) > t:
-                h = -t
-
-            if t > 0:
-                if t > self.mass_bds[3]*params.MEarth:
-                    component_idx = 3
-                elif t > self.mass_bds[2]*params.MEarth:
-                    component_idx = 2
-                elif t > self.mass_bds[1]*params.MEarth:
-                    component_idx = 1
-                else:
-                    component_idx = 0
-            else:
-                component_idx = 0
-
-            #force_step = True
-            #h *=1.01
-
-            self.mass_step = np.copy(h)
-
-            if f0 is None:
-                f0 = f(t,y)
-            k1 = h*f0[0]
-            k2 = h*f(t+0.5*h,y+0.5*k1)[0]
-            k3 = h*f(t+0.5*h,y+0.5*k2)[0]
-            k4 = h*f(t+h,y+k3)[0]
-
-            lrho = f0[1]
-            lT = self.temperature_profile[-1]
-
-            lT_bd = np.interp(np.log10(y[0]),self.lv[:,0],self.lv[:,1])
-            #lT_bd = fast_interp(np.log10(y[0]),self.lv[:,0],self.lv[:,1])
-            if lT > lT_bd:
-                phase = 'v'
-            else:
-                phase = 'l'
-
-            if self.density_profile is None:
-                self.density_profile = np.array([lrho])
-                self.component_profile = component_idx
-
-            delta_y = (k1+2*k2+2*k3+k4)*(1.0/6.0)
-
-            y_new = y + delta_y
-            t_new = t + h
-
-            if t_new > self.mass_bds[3]*params.MEarth:
-                component_idx_new = 3
-            elif t_new > self.mass_bds[2]*params.MEarth:
-                component_idx_new = 2
-            elif t_new > self.mass_bds[1]*params.MEarth:
-                component_idx_new = 1
-            else:
-                component_idx_new = 0
-            
-            #if t_new > 0:
-            #    component_idx_new = np.argmax(self.mass_bds[np.where(self.mass_bds*params.MEarth<t_new)])
-            #else:
-            #    component_idx_new = 0
-
-            f_new = f(t_new,y_new)
-            lrho_new = f_new[1]
-            if params.pt == 'Guillot' and component_idx_new == 3:
-                lT_new = f_new[2]#np.log10(y_new[3])
-            else:
-                lT_new = np.interp(np.log10(y_new[0]),self.pressure_grid,self.T_dict[params.components[component_idx_new]])
-                #lT_new = fast_interp(np.log10(y_new[0]),self.pressure_grid,self.T_dict[params.components[component_idx_new]])
-
-            lT_bd = np.interp(np.log10(y[0]),self.lv[:,0],self.lv[:,1])
-            if lT_new > lT_bd:
-                phase_new = 'v'
-            else:
-                phase_new = 'l'
-
-            delta_rho = np.abs(lrho_new-lrho)
-
-            delta_rho_max = 1.0e-1
-            delta_rho_min = 1.0e-3
-
-            last = False
-            new_eos = False
-            step = 'not taken'
-            if force_step:
-                step = 'step taken'
-                #print('boundary '+step)
-                y = y_new
-                t = t_new
-                no_increase = False
-                force_step = False
-            elif np.logical_and(self.phases,component_idx == 2):
-                step = 'step adjusted'
-                h = -self.mass_bds[component_idx+1]*params.MEarth*(1.0/5000.0)
-                force_step = True
-            elif component_idx == 0:
-                step = 'step adjusted'
-                h = -self.mass_bds[component_idx+1]*params.MEarth*(1.0/1000.0)
-                #h = -self.mass_bds[component_idx+1]*params.MEarth*(1.0/5000.0)
-                force_step = True
-            elif component_idx_new != component_idx:
-                #if component_idx_new == 2.0:
-                    #print(phase_new)
-                #bd_edge = self.mass_bds[component_idx]*params.MEarth+t0*5.0e-6
-                bd_edge = self.mass_bds[component_idx]*params.MEarth
-                h = bd_edge - t
-                force_step = True
-                no_increase = True
-            elif t_new == 0: #line up with elif
-                no_increase = True
-                if y_new[1] < 0:
-                    #print('final overshot')
-                    h *= 0.5
-                else:
-                    step = 'step taken'
-                    #print('final '+step)
-                    y = y_new
-                    t = t_new
-            #elif t < 0.01*t0:
-            #    h = -0.0001*t0
-            #    force_step = True
-            elif component_idx == 2.0 and phase_new != phase:
-                force_step = True
-            elif np.abs(delta_y[1]) > 0.002*y0[1] and y_new[1] > 0:
-                #print('singularity')
-                no_increase = True
-                h *= 0.5
-            elif delta_rho > delta_rho_max and np.abs(h)>np.abs(h_min):
-                #print('d rho too large')
-                h *= 0.8
-            elif no_increase is False and delta_rho < delta_rho_min and np.abs(h)<np.abs(h_max):
-                #print('d rho too small')
-                h /= 0.8
-            else:
-                step = 'step taken'
-                #print(step)
-                y = y_new
-                t = t_new
-                #print(t_new,y_new)
-                no_increase = False
-
-            if step == 'step taken':
-                f0 = np.copy(f_new)
-                #print(np.insert(y,0,np.array([t])))
-                self.mass_profile = np.append(self.mass_profile,t)
-                self.pressure_profile = np.append(self.pressure_profile,np.log10(y[0]))
-                self.radius_profile = np.append(self.radius_profile,y[1])
-                self.density_profile = np.append(self.density_profile,lrho_new)
-                self.temperature_profile = np.append(self.temperature_profile,lT_new)
-                self.component_profile = np.append(self.component_profile,component_idx_new)
-                self.lT_current = np.copy(lT_new)
-
-        #print('saving profile')
-        #np.savetxt('../mr_out/test_profile.txt',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
-        #quit()
-        return(t,y)
-
 
     def rk4(self,f, y0, t0, t_end):
         t = self.mass_profile
 
-        #t = np.insert(t,0,t0)
-            
-        #t = np.linspace(t0,0,1.0e5)
         y = np.zeros((len(t),len(y0)))
         y[0] = y0             
         h = t[1:]-t[:-1]
@@ -550,13 +296,6 @@ class Model:
 
         self.pressure_profile = y[:,0]
         self.radius_profile = y[:,1]
-
-        #np.savetxt('../mr_out/new_h2o_profile_M'+str(self.mass)+'_T'+str(self.T0)+'_P0'+str(np.log10(self.P0))+'_h2o'+str(self.x_w)+'.out',np.c_[t,y[:,1],np.log10(y[:,0]),self.temperature_profile,self.density_profile,self.component_profile])
-        #np.savetxt('../mr_out/liquid_profile_M'+str(self.mass)+'.out',np.c_[t,y[:,1],np.log10(y[:,0]),self.temperature_profile,self.density_profile,self.component_profile])
-
-        #if self.profiles:
-            #np.savetxt('../mr_out/test_profile5_M'+str(self.mass)+'.txt',np.c_[t,y[:,1],np.log10(y[:,0]),self.temperature_profile,self.density_profile,self.component_profile])
-            #np.savetxt('../mr_out/newT_rogers_fixed_profiles_plaw_M'+str(self.mass)+'_T'+str(self.T0)+'.out',np.c_[t,y[:,1],np.log10(y[:,0]),np.log10(y[:,3]),self.density_profile,self.component_profile])
 
         return(t[-1],y[-1])
 
