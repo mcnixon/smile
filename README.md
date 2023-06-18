@@ -14,3 +14,7 @@ Once you have downloaded everything, you need to create an environment variable 
 export eos_path="your/path/to/eos/data"
 
 Where you replace the text inside the "" with the path to your EOS data files. To avoid having to repeat this step, you can add the above line to your .zshrc or .bashrc file, depending on your OS.
+
+**Tests**
+
+You can run the tests.py script at the terminal (python tests.py) to check that the code is running correctly.
