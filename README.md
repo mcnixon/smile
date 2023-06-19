@@ -18,3 +18,9 @@ Where you replace the text inside the "" with the path to your EOS data files. T
 **Tests**
 
 You can run the tests.py script at the terminal (python tests.py) to check that the code is running correctly.
+
+**Citation**
+
+Feel free to use this code in your research! If you do, please cite the following paper:
+
+https://ui.adsabs.harvard.edu/abs/2021MNRAS.505.3414N/abstract
