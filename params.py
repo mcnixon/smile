@@ -53,4 +53,4 @@ lv_file = eos_path+'/liquid_vapour_bd.txt'
 
 entropy_files = {}
 entropy_files['hhe'] = eos_path+'/hhe_entropy.hdf5'
-entropy_files['h2o'] = eos_path+'/h2o_entropy_adjusted.hdf5'
+entropy_files['h2o'] = eos_path+'/h2o_entropy.hdf5'
