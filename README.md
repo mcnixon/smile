@@ -9,11 +9,19 @@ These data can be accessed at the following link:
 
 https://umd.box.com/s/ol5z2np499shiukpru2y6cl2sm1x85vm
 
-Once you have downloaded everything, you need to create an environment variable pointing to the path of the file. At the command line, enter
+Once you have downloaded everything, you need to create an environment variable pointing to the path of the file. 
+
+Linux/Mac: at the command line, enter
 
 export eos_path="your/path/to/eos/data"
 
 Where you replace the text inside the "" with the path to your EOS data files. To avoid having to repeat this step, you can add the above line to your .zshrc or .bashrc file, depending on your OS.
+
+Windows: open the command prompt and enter
+
+setx eos_path "your/path/to/eos/data"
+
+Where you replace the text inside the "" with the path to your EOS data files. This will set the environment variable permanently. You won't have to repeat this step each time you open a new command prompt.
 
 **Tests**
 
