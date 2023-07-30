@@ -29,7 +29,7 @@ Pad = 1.0e4
 components = ['fe','mgpv','h2o','hhe']
 
 #Pgrid = np.arange(4,22,0.01)#log P (Pa)
-Pgrid = np.arange(4,15,0.01)
+Pgrid = np.arange(2,15,0.01)
 
 Rp_range = np.array([0.1,10.0]) #initial guesses for Rp (REarth)
 #Rp_range = np.array([1.4,3.2]) #initial guesses for Rp (REarth)
