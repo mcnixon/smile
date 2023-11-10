@@ -7,32 +7,25 @@ import numpy as np
 class Model:
     '''Model parameters for a given mass'''
 
-    def __init__(self,mass,P0=None,T0=None,Pad=None,x_si=None,x_w=0.0,x_g=0.0,mixed=False,profiles=False,hhb=False,phases=False,liquid=False):
+    def __init__(self, mass, P0, T0, Pad, x_si, x_w, x_g, pt, pt_file, mixed, profiles, phases=False, hhb=False, liquid=False):
 
         self.profiles = profiles
         self.x_w = x_w
         self.x_g = x_g
         self.hhb = hhb
 
+        self.pt = pt
+        self.pt_file = pt_file
+
         self.mixed = mixed
 
         self.phases = phases
 
         self.tau_0 = 2.0/3.0
-        
-        if P0 is None:
-            self.P0 = params.P_0
-        else:
-            self.P0 = P0
-        if Pad is None:
-            self.Pad = params.Pad
-        else:
-            self.Pad = Pad
 
-        if T0 is None:
-            self.T0 = params.T_0
-        else:
-            self.T0 = T0
+        self.P0 = P0
+        self.Pad = Pad
+        self.T0 = T0
 
         self.Lp = 10**(-10.5)*mass*params.MEarth
             
@@ -71,7 +64,7 @@ class Model:
         self.rho_dict = {}
         self.T_dict = {}
 
-        if params.pt == 'Guillot':
+        if self.pt == 'guillot':
             self.f_r = 0.25
 
         self.hhe_check = len(params.components) == 4 and self.mass_fractions[-1] > 0.0
@@ -116,12 +109,12 @@ class Model:
             if self.hhe_check and self.eos_data['h2o'].isothermal == False:
                 self.rho_dict['h2o'] = None
 
-            if params.pt == 'Guillot':
+            if self.pt == 'guillot':
                 self.T_int = (self.Lp/(4.0*np.pi*(Rp_choice*params.REarth)**2*params.sigma_SB))**0.25
                 self.T_eq = (self.T0**4-self.T_int**4)**0.25
                 self.T_irr = self.T_eq*self.f_r**-0.25
                 self.gamma = 0.6*(self.T_irr/2000.0)**0.5
-                if params.pt == 'Guillot':
+                if self.pt == 'guillot':
                     self.P0 = (params.G*self.mass*params.MEarth*1.68*0.67/((Rp_choice*params.REarth)**2*10**-7.32*self.T0**0.45))**(1/1.68)
                     self.Tsurf = ((3.0/4.0)*self.T_int**4*((2.0/3.0)+(2.0/3.0)) + (3.0/4.0)*self.T_irr**4*self.f_r*((2.0/3.0)+1.0/(self.gamma*3.0**0.5)+(self.gamma/(3.0**0.5)-1.0/(self.gamma*3.0**0.5))*np.exp(-self.gamma*(2.0/3.0)*3.0**0.5)))**0.25
 
@@ -207,7 +200,7 @@ class Model:
 
         dp_dm = -(params.G*mass)/(4.0*np.pi*r**4)
         
-        if params.pt == 'Guillot':
+        if self.pt == 'guillot':
             tau = y[2]
             T = y[3]
 
@@ -222,7 +215,7 @@ class Model:
      
         #check which layer we are in
 
-        if params.pt == 'Guillot' and component_idx == 3:
+        if self.pt == 'guillot' and component_idx == 3:
             lrho = self.eos_data[comp].get_density(np.log10(p),np.log10(T))
             rho = 10**lrho
         else:    
@@ -231,7 +224,7 @@ class Model:
             rho = 10**lrho
         dr_dm = 1.0/(4.0*np.pi*r**2*rho)
 
-        if component_idx == 3 and params.pt == 'Guillot':
+        if component_idx == 3 and self.pt == 'guillot':
             N = 1000.0
             if tau < N*1.0/(self.gamma*3.0**0.5):
                 dT_dtau = ((3.0*self.T_int**4/4.0)+((3.0*self.T_irr**4/4.0)*self.f_r*(1.0-self.gamma**2)*(np.exp(-self.gamma*tau*3.0**0.5))))/(4.0*T**3)
@@ -250,7 +243,7 @@ class Model:
                 else:
                     dT_dm = dT_dm_n
 
-        if params.pt == 'Guillot':
+        if self.pt == 'guillot':
             return((np.array([dp_dm,dr_dm,dtau_dm,dT_dm]),lrho,T))
         else:
             return((np.array([dp_dm,dr_dm]),lrho))
@@ -290,7 +283,7 @@ class Model:
             #print(y[i][-1],self.component_profile[i],1.0/(self.gamma*3.0**0.5))
             f1 = f(t[i+1],y[i+1])
             self.density_profile[i+1] = f1[1]
-            if params.pt == 'Guillot':
+            if self.pt == 'guillot':
                 self.temperature_profile[i+1] = f1[2]
             else:
                     if self.mixed:

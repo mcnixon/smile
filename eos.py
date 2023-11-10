@@ -8,7 +8,7 @@ cheat = False
 class EOS:
     '''Equation of State for a given component of the planet.'''
 
-    def __init__(self,component,component2=None):
+    def __init__(self,component,component2=None,pt='isotherm-adiabat',pt_file=None):
         '''
         Creates EOS object with all pressure/adiabatic gradient information.
 
@@ -20,6 +20,9 @@ class EOS:
         self.component = component
 
         self.component2 = component2
+
+        self.pt = pt
+        self.pt_file = pt_file
 
         self.datafile = params.eos_files[self.component]
 
@@ -97,7 +100,7 @@ class EOS:
             self.dlogS_dlogT_interp2 = RegularGridInterpolator((self.pressure_data2_s,self.T_data2_s),self.dlogS_dlogT_grid2,method='linear',bounds_error=False,fill_value=None)
 
                 
-        if params.pt == 'Guillot':
+        if self.pt == 'guillot':
             if self.component == 'hhe':
                 self.gamma = 1.0
                 self.C = -7.32
@@ -162,7 +165,7 @@ class EOS:
         else:
             return None
             
-    #if params.pt =='Guillot':
+    #if self.pt =='guillot':
     #    def get_opacity(self,logP,logT):
     #        '''Compute opacity from power-law'''
             #log_opac = self.opac_interp(np.c_[logP,logT])[0]
@@ -224,6 +227,14 @@ class EOS:
         else:
             T_out = np.ones_like(logPgrid)*logTsurf
             step = logPgrid[1] - logPgrid[0]
+
+            if self.pt == 'file':
+                PT_file = np.loadtxt(self.pt_file)
+                logPfile = np.log10(PT_file[:,0])
+                logTfile = np.log10(PT_file[:,1])
+                T_out = np.interp(logPgrid,logPfile,logTfile)
+                logPad = np.amax(logPfile)
+            
             for i in range(len(logPgrid)-1):
                 if logP_hhb is None:
                     if logPgrid[i] >= logPad:
@@ -236,14 +247,14 @@ class EOS:
             logrho = self.get_density(logPgrid,T_out)
         return (logrho, T_out)
 
-    def get_mixed_eos(self,x2,logPgrid,logPad=None,logTsurf=None,logP_hhb=None,T_file=params.T_file):
+    def get_mixed_eos(self,x2,logPgrid,logPad=None,logTsurf=None,logP_hhb=None):
         '''Compute mixed EOS given component 2 mass fraction, pressure grid, radiative-convective boundary pressure (Pad) and surface T'''
 
         T_out = np.ones_like(logPgrid)*logTsurf
         step = logPgrid[1] - logPgrid[0]
 
-        if params.T_file is not None:
-            PT_file = np.loadtxt(params.T_file)
+        if self.pt == 'file':
+            PT_file = np.loadtxt(self.pt_file)
             logPfile = np.log10(PT_file[:,0])
             logTfile = np.log10(PT_file[:,1])
             T_out = np.interp(logPgrid,logPfile,logTfile)

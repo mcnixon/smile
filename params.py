@@ -8,21 +8,13 @@ mass_upper = 3.05
 mass_lower = 1.0
 mass_step = 0.1
 
-pt = 'isotherm-adiabat'
+#pt = 'isotherm-adiabat'
 
 #mass fractions: Fe, MgPv, H2O, remainder in H/He
 mass_fractions = np.array([0.233,0.467,0.3])
 #mass_fractions = np.array([0.0,0.0,0.0])
 
-P_0 = 1.0e4 #surface pressure (Pa)
-T_0 = 300.0 #surface temperature (K)
-
-T_file = None#'steam_gao_f.txt'
-
-#P_ad_hhe = 1.0e9 #pressure to switch to adiabatic H/He profile
-#Pad = 1.0e5 #pressure to switch to adiabatic temperature profile
-#Pad = 2.206e7 #pressure to switch to adiabatic temperature profile
-Pad = 1.0e4
+#T_file = None#'steam_gao_f.txt'
 
 #EOS information
 
