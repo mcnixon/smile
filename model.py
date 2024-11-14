@@ -68,24 +68,27 @@ class Model:
             self.f_r = 0.25
 
         self.hhe_check = len(params.components) == 4 and self.mass_fractions[-1] > 0.0
+        self.env_check = len(params.components) > 2 and self.mass_fractions[-1] > 0.0
             
         for component in params.components:
-            self.eos_data[component] = eos.EOS(component)
+            self.eos_data[component] = eos.EOS(component,pt=self.pt,pt_file=self.pt_file)
             if component == 'h2o' and self.hhe_check and self.eos_data[component].isothermal == False:
                 rho_T = [None, None]
+            elif component == 'mgpv' and self.env_check and self.eos_data[component].isothermal == False:
+                rho_T = [None,None]
             else:
                 rho_T = self.eos_data[component].get_eos(self.pressure_grid,np.log10(self.Pad),np.log10(self.T0))
             self.rho_dict[component] = rho_T[0]
             self.T_dict[component] = rho_T[1]
 
         if self.mixed:
-            self.env_data = eos.EOS('hhe',component2='h2o')
+            self.env_data = eos.EOS('hhe',component2='h2o',pt=self.pt,pt_file=self.pt_file)
             rho_T = self.env_data.get_mixed_eos((self.x_w/(self.x_g+self.x_w)),self.pressure_grid,np.log10(self.Pad),np.log10(self.T0))
             self.rho_dict['env'] = rho_T[0]
             self.T_dict['env'] = rho_T[1]
             
         #H2O liquid-vapour phase boundary
-        self.lv = np.loadtxt(params.lv_file)
+        self.lv = np.loadtxt(eos.lv_file)
         self.lv = np.log10(self.lv)
 
 
@@ -103,11 +106,13 @@ class Model:
             count += 1
             if count > 50:
                 print('failed')
-                return ['failed']
+                return 'failed'
             Rp_choice = np.mean(Rp_range)
 
             if self.hhe_check and self.eos_data['h2o'].isothermal == False:
                 self.rho_dict['h2o'] = None
+            if self.env_check and self.eos_data['mgpv'].isothermal == False:
+                self.rho_dict['mgpv'] = None
 
             if self.pt == 'guillot':
                 self.T_int = (self.Lp/(4.0*np.pi*(Rp_choice*params.REarth)**2*params.sigma_SB))**0.25
@@ -176,7 +181,10 @@ class Model:
         r = y[1]
 
         if mass > self.mass_bds[3]*params.MEarth:
-            component_idx = 3
+            if self.mixed:
+                component_idx = 2
+            else:
+                component_idx = 3
         elif mass > self.mass_bds[2]*params.MEarth:
             component_idx = 2
         elif mass > self.mass_bds[1]*params.MEarth:
@@ -197,6 +205,18 @@ class Model:
                 comp = params.components[component_idx]
         else:        
             comp = params.components[component_idx]
+
+        if component_idx == 1 and self.rho_dict['mgpv'] is None:
+
+            if self.mixed:
+                lT = np.interp(np.log10(p),self.pressure_grid,self.T_dict['env'])
+            elif self.mass_fractions[2] > 0.0:
+                lT = np.interp(np.log10(p),self.pressure_grid,self.T_dict['h2o'])
+            else:
+                lT = np.interp(np.log10(p),self.pressure_grid,self.T_dict['hhe'])
+            rho_T = self.eos_data['mgpv'].get_eos(self.pressure_grid,np.log10(self.Pad),lT,np.log10(p))
+            self.rho_dict['mgpv'] = rho_T[0]
+            self.T_dict['mgpv'] = rho_T[1]
 
         dp_dm = -(params.G*mass)/(4.0*np.pi*r**4)
         

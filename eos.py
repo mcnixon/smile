@@ -1,9 +1,24 @@
 import numpy as np
-import params
+import os
 import h5py
 from scipy.interpolate import RegularGridInterpolator
 
-cheat = False
+#Set locations of files needed for EOS calculations
+eos_files = {}
+
+eos_path = os.getenv("eos_path")
+
+eos_files['fe'] = eos_path+'/fe_eos.dat'
+#eos_files['mgpv'] = eos_path+'/mgpv_eos.dat'
+eos_files['mgpv'] = eos_path+'/mgsio3_eos.hdf5'
+eos_files['h2o'] = eos_path+'/h2o_eos.hdf5'
+eos_files['hhe'] = eos_path+'/hhe_eos.hdf5'
+
+lv_file = eos_path+'/liquid_vapour_bd.txt'
+
+entropy_files = {}
+entropy_files['hhe'] = eos_path+'/hhe_entropy.hdf5'
+entropy_files['h2o'] = eos_path+'/h2o_entropy.hdf5'
 
 class EOS:
     '''Equation of State for a given component of the planet.'''
@@ -24,12 +39,12 @@ class EOS:
         self.pt = pt
         self.pt_file = pt_file
 
-        self.datafile = params.eos_files[self.component]
+        self.datafile = eos_files[self.component]
 
         if self.component2 is not None:
-            self.datafile2 = params.eos_files[self.component2]
-            self.datafile_s = params.entropy_files[self.component]
-            self.datafile2_s = params.entropy_files[self.component2]
+            self.datafile2 = eos_files[self.component2]
+            self.datafile_s = entropy_files[self.component]
+            self.datafile2_s = entropy_files[self.component2]
 
         #check for hdf5 formatted (non-isothermal) EOS
         if self.datafile[-1] == '5':
