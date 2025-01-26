@@ -20,11 +20,10 @@ class Model:
     pt_file (str): Pressure-temperature relation file
     mixed (bool): Flag for mixed H/He/H2O envelope
     profiles (bool): Flag to save interior profiles to text file
-    hhb (bool, optional): Flag to compute H/He/H2O boundary. Default is False
-    liquid (bool, optional): Flag for liquid. Default is False
+    hhb (bool): Flag to compute H/He/H2O boundary. Default is False
     '''
 
-    def __init__(self, mass, P0, T0, Pad, x_si, x_w, x_g, pt, pt_file, mixed, profiles, hhb=False, liquid=False):
+    def __init__(self, mass, P0, T0, Pad, x_si, x_w, x_g, Rp_lower, Rp_upper, pt, pt_file, mixed, profiles, hhb):
 
         '''
         Initializes the Model class with the given parameters.
@@ -34,6 +33,9 @@ class Model:
         self.profiles = profiles
         self.x_w = x_w
         self.x_g = x_g
+
+        self.initial_Rp_range = np.array([Rp_lower,Rp_upper])
+        
         self.hhb = hhb
 
         self.pt = pt
@@ -48,8 +50,17 @@ class Model:
         self.Pad = Pad
         self.T0 = T0
 
+        #Constants (SI units)
+        self.MEarth = 5.972e24
+        self.REarth = 6.371e6
+        self.G = 6.67e-11
+        self.sigma_SB = 5.6704e-08
+
+        #Component names
+        self.components = ['fe','mgpv','h2o','hhe']
+
         #Planet luminosity for Guillot P-T profile (default = 10**-10.5 times planet mass, see Rogers et al 2010)
-        self.Lp = 10**(-10.5)*self.mass*params.MEarth
+        self.Lp = 10**(-10.5)*self.mass*self.MEarth
 
         #Set mass fractions. If x_si is not provided, assume x_si = 2*x_fe
         if x_si is None:
@@ -60,7 +71,7 @@ class Model:
             x_fe = 1.0 - (x_si + x_w + x_g)
         self.mass_fractions = np.array([x_fe,x_si,x_w,x_g])
 
-        if len(params.components) > len(self.mass_fractions):
+        if len(self.components) > len(self.mass_fractions):
             self.mass_fractions = np.append(self.mass_fractions,1.0-np.sum(self.mass_fractions))
 
         self.mass_bds = np.cumsum(self.mass_fractions)*self.mass
@@ -73,10 +84,10 @@ class Model:
         else:
             self.mass_profile = (1-np.logspace(np.log10(0.01*frac[-1]),0,1000))*self.mass
         self.mass_profile = np.insert(self.mass_profile,0,self.mass)
-        self.mass_profile *= params.MEarth
+        self.mass_profile *= self.MEarth
 
         #Get EOS data
-        self.pressure_grid = params.Pgrid
+        self.pressure_grid = np.arange(2,15,0.01)
 
         self.eos_data = {}
         self.rho_dict = {}
@@ -87,13 +98,13 @@ class Model:
             self.f_r = 0.25
 
         #Check whether H/He is included as a separate layer
-        self.hhe_check = len(params.components) == 4 and self.mass_fractions[-1] > 0.0
+        self.hhe_check = len(self.components) == 4 and self.mass_fractions[-1] > 0.0
 
         #Check whether the planet has a gaseous envelope
-        self.env_check = len(params.components) > 2 and self.mass_fractions[-1] > 0.0
+        self.env_check = len(self.components) > 2 and self.mass_fractions[-1] > 0.0
 
         #Load EOS data
-        for component in params.components:
+        for component in self.components:
             self.eos_data[component] = eos.EOS(component,pt=self.pt,pt_file=self.pt_file)
             if component == 'h2o' and self.hhe_check and self.eos_data[component].isothermal == False:
                 rho_T = [None, None]
@@ -121,22 +132,26 @@ class Model:
         Finds planetary radius for a given set of input parameters
 
         Returns:
-        float, tuple or str: If solved successfully, returns the planetary radius (float) or radius + pressure and temperature at the H/He/H2O boundary (HHB) if 'hhb' = True
+        float, tuple or str: If solved successfully, returns the planetary radius (float) or radius + pressure and temperature at the H/He/H2O boundary (HHB) if 'hhb' = True. Note that if 'hhb' = True, the radius may be less accurate.
         If not solved successfully (e.g. due to radius outside the range of initial guesses), returns 'failed'
         '''
 
         solved = False
         count = 0
-        Rp_range = np.copy(params.Rp_range)
+        Rp_range = np.copy(self.initial_Rp_range)
 
-        T_hhb = 0.0
+        #Initialising P and T at the HHB. Will always update before returning values.
         P_hhb = 20.0
+        T_hhb = 0.0
 
         while solved is False:
             count += 1
             if count > 50:
                 #Exits the loop if a solution is not found within 50 iterations
-                return 'failed'
+                if Rp_choice > np.mean(self.initial_Rp_range):
+                    return 'Failed to converge. Try increasing Rp_upper.'
+                else:
+                    return 'Failed to converge. Try decreasing Rp_lower.'
             
             #Chooses the mean value of the selected Rp range
             Rp_choice = np.mean(Rp_range)
@@ -149,19 +164,19 @@ class Model:
 
             #Sets intrinsic temperature, photospheric pressure and surface temperature for Guillot P-T profile
             if self.pt == 'guillot':
-                self.T_int = (self.Lp/(4.0*np.pi*(Rp_choice*params.REarth)**2*params.sigma_SB))**0.25
+                self.T_int = (self.Lp/(4.0*np.pi*(Rp_choice*self.REarth)**2*self.sigma_SB))**0.25
                 self.T_eq = (self.T0**4-self.T_int**4)**0.25
                 self.T_irr = self.T_eq*self.f_r**-0.25
                 self.gamma = 0.6*(self.T_irr/2000.0)**0.5
-                self.P0 = (params.G*self.mass*params.MEarth*1.68*0.67/((Rp_choice*params.REarth)**2*10**-7.32*self.T0**0.45))**(1/1.68)
+                self.P0 = (self.G*self.mass*self.MEarth*1.68*0.67/((Rp_choice*self.REarth)**2*10**-7.32*self.T0**0.45))**(1/1.68)
                 self.Tsurf = ((3.0/4.0)*self.T_int**4*((2.0/3.0)+(2.0/3.0)) + (3.0/4.0)*self.T_irr**4*self.f_r*((2.0/3.0)+1.0/(self.gamma*3.0**0.5)+(self.gamma/(3.0**0.5)-1.0/(self.gamma*3.0**0.5))*np.exp(-self.gamma*(2.0/3.0)*3.0**0.5)))**0.25
 
-                self.y0 = np.array([self.P0,Rp_choice*params.REarth,self.tau_0])
+                self.y0 = np.array([self.P0,Rp_choice*self.REarth,self.tau_0])
 
             #Sets surface temperature for non-Guillot P-T profile
             else:
                 self.Tsurf = self.T0
-                self.y0 = np.array([self.P0,Rp_choice*params.REarth])
+                self.y0 = np.array([self.P0,Rp_choice*self.REarth])
 
             #Solve differential equation system
             soln = self.rk4(self.ode_sys,self.y0)
@@ -219,14 +234,14 @@ class Model:
         r = y[1]
 
         #Find current component
-        if mass > self.mass_bds[3]*params.MEarth:
+        if mass > self.mass_bds[3]*self.MEarth:
             if self.mixed:
                 component_idx = 2
             else:
                 component_idx = 3
-        elif mass > self.mass_bds[2]*params.MEarth:
+        elif mass > self.mass_bds[2]*self.MEarth:
             component_idx = 2
-        elif mass > self.mass_bds[1]*params.MEarth:
+        elif mass > self.mass_bds[1]*self.MEarth:
             component_idx = 1
         else:
             component_idx = 0
@@ -242,9 +257,9 @@ class Model:
             if component_idx > 1.0:
                 comp = 'env'
             else:
-                comp = params.components[component_idx]
+                comp = self.components[component_idx]
         else:        
-            comp = params.components[component_idx]
+            comp = self.components[component_idx]
             
         #Generate new silicate EOS if necessary
         if component_idx == 1 and self.rho_dict['mgpv'] is None:
@@ -259,7 +274,7 @@ class Model:
             self.T_dict['mgpv'] = rho_T[1]
 
         #Calculate pressure derivative
-        dp_dm = -(params.G*mass)/(4.0*np.pi*r**4)
+        dp_dm = -(self.G*mass)/(4.0*np.pi*r**4)
 
         #Find non-adiabatic optical depth gradient for Guillot P-T profile
         if self.pt == 'guillot':
@@ -293,7 +308,7 @@ class Model:
                 dT_dtau = ((3.0*self.T_int**4/4.0)+((3.0*self.T_irr**4/4.0)*self.f_r*(1.0-self.gamma**2)*(np.exp(-self.gamma*tau*3.0**0.5))))/(4.0*T**3)
                 dT_dm_n = dT_dtau*dtau_dm
             else:
-                dT_dr = -3.0*kappa*self.Lp*rho/(16.0*4.0*params.sigma_SB*np.pi*(T)**3*r**2)
+                dT_dr = -3.0*kappa*self.Lp*rho/(16.0*4.0*self.sigma_SB*np.pi*(T)**3*r**2)
                 dT_dm_n = dT_dr*dr_dm
             #find adiabatic temperature
             if component_idx == 3:
@@ -340,9 +355,9 @@ class Model:
 
         #Initialise profiles
         self.component_profile = np.zeros_like(t).astype(int)
-        self.component_profile[np.where(t>self.mass_bds[1]*params.MEarth)] = 1
-        self.component_profile[np.where(t>self.mass_bds[2]*params.MEarth)] = 2
-        self.component_profile[np.where(t>self.mass_bds[3]*params.MEarth)] = 3
+        self.component_profile[np.where(t>self.mass_bds[1]*self.MEarth)] = 1
+        self.component_profile[np.where(t>self.mass_bds[2]*self.MEarth)] = 2
+        self.component_profile[np.where(t>self.mass_bds[3]*self.MEarth)] = 3
         
         self.density_profile = np.zeros_like(t)
         self.temperature_profile = np.zeros_like(t)
@@ -370,9 +385,9 @@ class Model:
                         if self.component_profile[i+1] > 1.0:
                             self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict['env'])
                         else:
-                            self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
+                            self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[self.components[self.component_profile[i+1]]])
                     else:
-                        self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[params.components[self.component_profile[i+1]]])
+                        self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[self.components[self.component_profile[i+1]]])
                 
             f0 = f1
                     

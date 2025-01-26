@@ -27,9 +27,11 @@ class EOS:
         '''
         Creates EOS object with all pressure/adiabatic gradient information.
 
-        -component: name of species ('fe','mgpv','h2o','hhe')
-        -datafile: location of EOS data
-        -isothermal: whether to create isothermal or T-dependent EOS
+        Parameters:
+        component (str): name of component (Iron: 'fe', MgSiO3: 'mgpv', Water: 'h2o', Hydrogen/Helium: 'hhe')
+        component2 (str): name of second component for mixed EOS, None for single-component EOS (default=None)
+        pt (str): form of P-T profile (default='isotherm-adiabat')
+        pt_file (str): location of file specifying P-T profile, if used (default=None)
         '''
 
         self.component = component
@@ -41,22 +43,25 @@ class EOS:
 
         self.datafile = eos_files[self.component]
 
+        #Load second EOS and entropy files for mixed EOS
         if self.component2 is not None:
             self.datafile2 = eos_files[self.component2]
             self.datafile_s = entropy_files[self.component]
             self.datafile2_s = entropy_files[self.component2]
 
-        #check for hdf5 formatted (non-isothermal) EOS
+        #Check for hdf5 formatted (non-isothermal) EOS
         if self.datafile[-1] == '5':
             self.isothermal = False
         else:
             self.isothermal = True
 
         if self.isothermal:
+            #Generate pressure and density grids for isothermal EOS
             self.f = np.loadtxt(self.datafile,skiprows=1)
             self.pressure_data = np.copy(self.f[:,0])
             self.rho_data = np.copy(self.f[:,1])
         else:
+            #Generate density and adiabatic gradient grids for non-isothermal EOS
             self.f = h5py.File(self.datafile,"r")
             self.pressure_data = np.copy(self.f['logP'])
             self.max_P_idx = np.argmax(self.pressure_data)
@@ -69,6 +74,7 @@ class EOS:
             self.rho_interp = RegularGridInterpolator((self.pressure_data,self.T_data),self.rho_grid,method='linear',bounds_error=False,fill_value=None)
 
 
+        #Repeat for second component (if mixed EOS)
         if self.component2 is not None:
             
             if self.datafile2[-1] == '5':
@@ -92,6 +98,7 @@ class EOS:
                 self.grad_interp2 = RegularGridInterpolator((self.pressure_data2,self.T_data2),self.grad_grid2,method='linear',bounds_error=False,fill_value=None)
                 self.rho_interp2 = RegularGridInterpolator((self.pressure_data2,self.T_data2),self.rho_grid2,method='linear',bounds_error=False,fill_value=None)
 
+            #Generate entropy grids for mixed EOS
             self.f_s = h5py.File(self.datafile_s,'r')
             self.pressure_data_s = np.copy(self.f_s['logP'])
             self.T_data_s = np.copy(self.f_s['logT'])
@@ -288,8 +295,6 @@ class EOS:
 
         rho = 1.0/((1-x2)/(10**(logrho_1)) + x2/(10**logrho_2))
         logrho = np.log10(rho)
-
-        np.savetxt('PTrho.txt',np.c_[logPgrid,logrho,T_out])
         
         return (logrho,T_out)
 
