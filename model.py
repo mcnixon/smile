@@ -1,6 +1,5 @@
 '''Single interior model solver'''
 
-import params
 import eos
 import numpy as np
 
@@ -16,14 +15,17 @@ class Model:
     x_si (float): Silicate mass fraction
     x_w (float): Water mass fraction
     x_g (float): H/He mass fraction
+    Rp_lower (float): Lower limit for Rp (Earth radii)
+    Rp_upper (float): upper limit for Rp (Earth radii)
     pt (str): Pressure-temperature relation type
     pt_file (str): Pressure-temperature relation file
     mixed (bool): Flag for mixed H/He/H2O envelope
     profiles (bool): Flag to save interior profiles to text file
     hhb (bool): Flag to compute H/He/H2O boundary. Default is False
+    output_dir (str): Location to save profiles, only used if profiles=True.
     '''
 
-    def __init__(self, mass, P0, T0, Pad, x_si, x_w, x_g, Rp_lower, Rp_upper, pt, pt_file, mixed, profiles, hhb):
+    def __init__(self, mass, P0, T0, Pad, x_si, x_w, x_g, Rp_lower, Rp_upper, pt, pt_file, mixed, profiles, hhb, output_dir):
 
         '''
         Initializes the Model class with the given parameters.
@@ -42,6 +44,8 @@ class Model:
         self.pt_file = pt_file
 
         self.mixed = mixed
+
+        self.output_dir = output_dir
 
         #Optical depth of photosphere for Guillot P-T profile (default = 2/3)
         self.tau_0 = 2.0/3.0
@@ -133,7 +137,7 @@ class Model:
 
         Returns:
         float, tuple or str: If solved successfully, returns the planetary radius (float) or radius + pressure and temperature at the H/He/H2O boundary (HHB) if 'hhb' = True. Note that if 'hhb' = True, the radius may be less accurate.
-        If not solved successfully (e.g. due to radius outside the range of initial guesses), returns 'failed'
+        If not solved successfully (e.g. due to radius outside the range of initial guesses), returns 'Failed to converge.'
         '''
 
         solved = False
@@ -216,7 +220,13 @@ class Model:
 
         #Save mass, radius, pressure, temperature, density and component profiles if chosen
         if self.profiles:
-            np.savetxt('../mr_out/profile_M'+str(self.mass)+'_P0'+str(self.P0)+'_T'+str(self.T0)+'_Pad'+str(self.Pad)+'_xw'+str(self.x_w)+'_xg'+str(self.x_g)+'.out',np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile])
+            #Create output directory if needed
+            import pathlib
+            pathlib.Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+            if self.mixed:
+                np.savetxt(self.output_dir + f"/profile_M_{self.mass:.2f}_P0_{self.P0:.2e}_T0_{self.T0:.2f}_Pad_{self.Pad:.2e}_xg_{self.mass_fractions[3]:.2e}_xw_{self.mass_fractions[2]:.2e}_xmgpv_{self.mass_fractions[1]:.2e}_mixed_env.out", np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile], header='Mass (kg) | Radius (m) | Pressure (Pa) | Temperature (K) | Density (kg/m3) | Component_index')
+            else:
+                np.savetxt(self.output_dir + f"/profile_M_{self.mass:.2f}_P0_{self.P0:.2e}_T0_{self.T0:.2f}_Pad_{self.Pad:.2e}_xg_{self.mass_fractions[3]:.2e}_xw_{self.mass_fractions[2]:.2e}_xmgpv_{self.mass_fractions[1]:.2e}_unmixed_env.out", np.c_[self.mass_profile,self.radius_profile,self.pressure_profile,self.temperature_profile,self.density_profile,self.component_profile], header='Mass (kg) | Radius (m) | Pressure (Pa) | Temperature (K) | Density (kg/m3) | Component_index')
 
         #Return final Rp
         return Rp_final
@@ -357,11 +367,14 @@ class Model:
         self.component_profile = np.zeros_like(t).astype(int)
         self.component_profile[np.where(t>self.mass_bds[1]*self.MEarth)] = 1
         self.component_profile[np.where(t>self.mass_bds[2]*self.MEarth)] = 2
-        self.component_profile[np.where(t>self.mass_bds[3]*self.MEarth)] = 3
+        if self.mixed:
+            self.component_profile[np.where(t>self.mass_bds[3]*self.MEarth)] = 2
+        else:
+            self.component_profile[np.where(t>self.mass_bds[3]*self.MEarth)] = 3
         
         self.density_profile = np.zeros_like(t)
         self.temperature_profile = np.zeros_like(t)
-        self.density_profile[0] = np.copy(f0[1])
+        self.density_profile[0] = 10**np.copy(f0[1])
         self.temperature_profile[0] = self.Tsurf
 
         #Iterate over mass steps using RK4
@@ -375,19 +388,19 @@ class Model:
             delta_y = (k1+2*k2+2*k3+k4)*(1.0/6.0)
             y[i+1] = y[i] + delta_y
             f1 = f(t[i+1],y[i+1])
-            self.density_profile[i+1] = f1[1]
+            self.density_profile[i+1] = 10**f1[1]
 
             #Update temperature profile
             if self.pt == 'guillot':
-                self.temperature_profile[i+1] = f1[2]
+                self.temperature_profile[i+1] = 10**f1[2]
             else:
                     if self.mixed:
                         if self.component_profile[i+1] > 1.0:
-                            self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict['env'])
+                            self.temperature_profile[i+1] = 10**np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict['env'])
                         else:
-                            self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[self.components[self.component_profile[i+1]]])
+                            self.temperature_profile[i+1] = 10**np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[self.components[self.component_profile[i+1]]])
                     else:
-                        self.temperature_profile[i+1] = np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[self.components[self.component_profile[i+1]]])
+                        self.temperature_profile[i+1] = 10**np.interp(np.log10(y[i+1,0]),self.pressure_grid,self.T_dict[self.components[self.component_profile[i+1]]])
                 
             f0 = f1
                     
