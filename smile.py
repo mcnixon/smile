@@ -34,3 +34,22 @@ def get_radius(mass, P0=1.0e5, T0=300.0, Pad=1.0e5, x_si=None, x_w=0.0, x_g=0.0,
 
     #Solve for and return radius
     return int_model.find_Rp()
+
+def find_silicate_phase(P,T):
+    '''Finds silicate phase corresponding to input pressure and temperature.
+
+    Output: phase (str)
+
+    Inputs:
+    P: pressure in Pa (float)
+    T: temperature in K (float)
+    '''
+
+    P_GPa *= 1e-9 #convert to GPa
+
+    if P_GPa > 112.5 + 7e-3*T:
+        return "postperovskite"
+    elif T > 1830.0*(np.power(1 + P_GPa/4.6,0.33)):
+        return "liquid"
+    else:
+        return "bridgmanite"
